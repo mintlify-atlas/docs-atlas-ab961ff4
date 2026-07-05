@@ -1,7 +1,7 @@
 ---
-title: "Graphical Method for 2-Variable Linear Programs"
+title: "Graphical LP: 2-Variable Feasible Region and Optimal Point"
 sidebarTitle: "Graphical LP"
-description: "Visualize the feasible region, constraint lines, and optimal point for 2-variable linear programs. Automatically generated when using the Simplex solver with 2 variables."
+description: "GraphicalData field reference for the Simplex solver: constraint lines, feasible polygon, vertices, and optimal point for 2-variable LP problems."
 ---
 
 The graphical method translates a 2-variable linear program into a set of geometric objects — boundary lines, a feasible polygon, corner vertices, an objective-level line, and the optimal point — that can be rendered directly as a 2D chart. It is not a standalone endpoint; instead, it is **automatically invoked** by `POST /api/v1/simplex/solve` whenever the `objective` array contains exactly **2 coefficients**. The result is returned inside the `graphical` field of the normal Simplex response.
@@ -14,10 +14,12 @@ The simplex route checks the length of `payload.objective` immediately after sol
 
 ```python
 if len(payload.objective) == 2:
-    optimal_point = {
-        "x": result.variables.get("x1", 0.0),
-        "y": result.variables.get("x2", 0.0),
-    }
+    optimal_point = None
+    if result.status == "optimal" and result.variables is not None:
+        optimal_point = {
+            "x": result.variables.get("x1", 0.0),
+            "y": result.variables.get("x2", 0.0),
+        }
     graphical = build_graphical_data(
         objective=payload.objective,
         goal=payload.goal,
@@ -150,7 +152,7 @@ The `graphical` object inside the Simplex response has the following structure.
   "graphical": {
     "status": "optimal",
     "goal": "max",
-    "bounds": { "x_min": 0.0, "x_max": 4.6, "y_min": 0.0, "y_max": 3.45 },
+    "bounds": { "x_min": 0.0, "x_max": 6.9, "y_min": 0.0, "y_max": 6.9 },
     "constraints": [
       {
         "a": 6.0, "b": 4.0, "c": 24.0,
@@ -160,7 +162,7 @@ The `graphical` object inside the Simplex response has the following structure.
       },
       {
         "a": 1.0, "b": 2.0, "c": 6.0,
-        "points": [{ "x": 0.0, "y": 3.0 }, { "x": 4.6, "y": 0.0 }],
+        "points": [{ "x": 0.0, "y": 3.0 }, { "x": 6.0, "y": 0.0 }],
         "label": "c2",
         "inequality": "<="
       }

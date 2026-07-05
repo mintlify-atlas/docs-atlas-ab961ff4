@@ -1,7 +1,7 @@
 ---
 title: "POST /api/v1/kkt/solve — KKT Constrained Optimization"
 sidebarTitle: "KKT Solve"
-description: "Solve nonlinear constrained optimization problems (2–3 variables, 1–5 constraints) via Karush-Kuhn-Tucker conditions. Reports all KKT cases explored and the global optimum."
+description: "Solve nonlinear constrained problems with 2–3 variables and up to 5 constraints via KKT conditions. Reports all explored cases and the best feasible point."
 ---
 
 The `/api/v1/kkt/solve` endpoint solves nonlinear constrained optimization problems using the **Karush-Kuhn-Tucker (KKT) conditions**. The solver enumerates every combination of inequality constraints that could be active at the solution, constructs the corresponding KKT stationarity system, and solves it via multivariate Newton's method. All explored cases — valid and infeasible — are reported, along with the best feasible point.
@@ -12,7 +12,7 @@ The `/api/v1/kkt/solve` endpoint solves nonlinear constrained optimization probl
 
 **`POST /api/v1/kkt/solve`**
 
-```json
+```http
 Content-Type: application/json
 ```
 

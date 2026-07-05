@@ -67,7 +67,11 @@ Molecules combine two or more atoms into a small, focused UI unit.
 |---|---|
 | `TableauTable` | Renders the final and per-iteration simplex tableaux from `tableau_rows` |
 | `GraphicalPlot` | Plotly.js wrapper for 2-D feasible region plots |
+| `FunctionPlot` | Plotly.js wrapper for single-variable function plots (bisection, Newton-Raphson) |
+| `Plot3D` | Plotly.js wrapper for 3-D surface and volume plots (gradient, KKT, graphical multivar) |
+| `BBTreeGraph` | Plotly.js wrapper that visualizes the Branch & Bound exploration tree |
 | `TabGroup` | Tab-switching control used to navigate between tableau, graphical, and iteration views |
+| `SubTabGroup` | Secondary tab-switching control for nested view sections |
 | `ObjectiveRow` | A single row of objective coefficient inputs |
 | `ConstraintRow` | One constraint: coefficient inputs, inequality selector, and RHS input |
 | `MetricCard` | Key-value card displaying a single result metric (e.g. objective value) |
@@ -82,7 +86,21 @@ Organisms are domain-aware sections of the UI. They own local layout and may man
 | `AppHeader` | Top navigation bar with method title and home button |
 | `ObjectiveForm` | Full objective function input section (variable count selector + coefficient row) |
 | `ConstraintsForm` | Manages a dynamic list of `ConstraintRow` molecules with add/remove controls |
-| `SolutionDisplay` | Renders the complete solver result: status badge, metrics, tableau, and graphical output |
+| `SolutionDisplay` | Renders the complete simplex solver result: status badge, metrics, tableau, and graphical output |
+| `GraphicalSolutionDisplay` | Renders the 2-D feasible region and optimal point for 2-variable simplex problems |
+| `BinarySolutionDisplay` | Renders the binary B&B result: optimal variables, objective value, and B&B tree |
+| `IntegerSolutionDisplay` | Renders the pure-integer B&B result and exploration tree |
+| `BisectionForm` | Input form for the bisection single-variable optimizer (polynomial coefficients, interval, tolerance) |
+| `BisectionSolutionDisplay` | Renders bisection iteration table and convergence plot |
+| `NewtonForm` | Input form for the Newton-Raphson single-variable optimizer (coefficients, initial point, tolerance) |
+| `NewtonSolutionDisplay` | Renders Newton-Raphson iteration table and function plot |
+| `GradientForm` | Input form for the gradient descent multi-variable optimizer (expression, variables, initial point, step size) |
+| `GradientSolutionDisplay` | Renders gradient descent iteration table and 3-D surface plot |
+| `GraphicalMultivarForm` | Input form for the graphical multi-variable method (expression, variables, bounds) |
+| `GraphicalMultivarSolutionDisplay` | Renders critical points, 3-D surface, and volume plot for multi-variable graphical output |
+| `KKTObjectiveForm` | Input form for the KKT objective function and variable list |
+| `KKTConstraintsForm` | Manages a dynamic list of KKT constraint expressions with inequality selectors |
+| `KKTSolutionDisplay` | Renders KKT cases explored, optimal point, multipliers, and objective value |
 
 ### Templates
 

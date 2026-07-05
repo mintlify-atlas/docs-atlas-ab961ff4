@@ -1,7 +1,7 @@
 ---
 title: "KKT Conditions for Constrained Nonlinear Optimization"
 sidebarTitle: "KKT"
-description: "Solve constrained nonlinear programs using Karush-Kuhn-Tucker conditions. Enumerates active constraint combinations, solves each KKT system, and returns the global optimum."
+description: "Solve constrained nonlinear optimization with KKT conditions. Enumerates active-set combinations, applies Newton's method, and reports all cases explored."
 ---
 
 The **Karush-Kuhn-Tucker (KKT) conditions** are necessary optimality conditions for constrained nonlinear programs. For a minimization problem with inequality constraints `gᵢ(x) ≤ 0` and equality constraints `hⱼ(x) = 0`, any local optimum `x*` must satisfy:
@@ -121,7 +121,7 @@ POST /api/v1/kkt/solve
       Solution point found for this case. `null` for `"no_convergence"` cases.
     </ResponseField>
     <ResponseField name="lambdas" type="object | null">
-      Dictionary of inequality multipliers, keyed as `"λ1"`, `"λ2"`, etc., indexed over active constraints. `null` for `"no_convergence"` cases.
+      Dictionary of inequality multipliers, keyed as `"λ1"`, `"λ2"`, etc., where the number reflects the **original 1-based index** of each active constraint in the `constraints` array (e.g., if constraints 1 and 3 are active, keys are `"λ1"` and `"λ3"`). `null` for `"no_convergence"` cases.
     </ResponseField>
     <ResponseField name="mus" type="object | null">
       Dictionary of equality multipliers, keyed as `"μ1"`, `"μ2"`, etc. `null` for `"no_convergence"` cases or when there are no equality constraints.
@@ -148,7 +148,7 @@ POST /api/v1/kkt/solve
 ## Multiplier Conventions
 
 <Note>
-  `lambdas` (`λ`) are the **inequality constraint multipliers**. For a valid KKT point, all λᵢ must be non-negative (dual feasibility). They are keyed by their position among the active constraints in the enumerated subset, not by their original index in the `constraints` array.
+  `lambdas` (`λ`) are the **inequality constraint multipliers**. For a valid KKT point, all λᵢ must be non-negative (dual feasibility). Keys reflect the **original 1-based position** of each constraint in the `constraints` array — for example, if constraints at indices 0 and 2 are active, the keys are `"λ1"` and `"λ3"`.
 
   `mus` (`μ`) are the **equality constraint multipliers**. They have no sign restriction and are indexed over the equality constraints in the order they appear in the request.
 </Note>

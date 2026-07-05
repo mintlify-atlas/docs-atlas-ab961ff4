@@ -1,7 +1,7 @@
 ---
-title: "Bisection Method for Single-Variable Optimization"
+title: "Bisection Method for Single-Variable Polynomial Optimization"
 sidebarTitle: "Bisection"
-description: "Optimize a polynomial function of one variable by applying bisection to its derivative f′(x). Specify polynomial coefficients, interval, tolerance, and goal."
+description: "Optimize a single-variable polynomial by bisecting its derivative f′(x) to zero. Supply coefficients, an interval, tolerance, and an optimization goal."
 ---
 
 The Bisection method finds an optimal point of a single-variable polynomial by locating a root of its first derivative f′(x) = 0 within a user-supplied interval \[a, b\]. At each iteration the interval is halved: the midpoint m = (a + b) / 2 is evaluated, and the sub-interval whose endpoints bracket the zero-crossing of f′ is retained. Iteration continues until f′(m) falls within the requested tolerance or the interval width itself becomes negligibly small. Once the stationary point x\* is found, the sign of f″(x\*) determines whether it is a minimum, maximum, or saddle/inflection point.
@@ -170,7 +170,7 @@ curl -X POST http://localhost:8000/bisection/solve \
   "optimal_value": 4.0,
   "nature": "máximo",
   "goal_satisfied": true,
-  "iterations_count": 22,
+  "iterations_count": 1,
   "iterations": [
     {
       "iteration": 1,

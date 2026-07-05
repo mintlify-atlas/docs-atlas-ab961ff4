@@ -1,7 +1,7 @@
 ---
 title: "POST /api/v1/bisection/solve — Bisection Optimization"
 sidebarTitle: "Bisection Solve"
-description: "Optimize a single-variable polynomial over a closed interval using the Bisection method on f′(x). Returns the optimal point, its nature, and a full iteration table."
+description: "Optimize a single-variable polynomial on a closed interval using Bisection on f′(x). Returns the critical point, its nature, and a full iteration log."
 ---
 
 The `/api/v1/bisection/solve` endpoint finds the optimum of a single-variable polynomial function on a specified interval `[a, b]`. Rather than minimising or maximising `f(x)` directly, the solver applies the Bisection method to the **first derivative** `f′(x)` to locate the root where `f′(x) = 0`. The nature of the critical point (maximum, minimum, or inflection) is then verified with the second derivative.
@@ -12,7 +12,7 @@ The `/api/v1/bisection/solve` endpoint finds the optimum of a single-variable po
 
 **`POST /api/v1/bisection/solve`**
 
-```json
+```http
 Content-Type: application/json
 ```
 

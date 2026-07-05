@@ -1,7 +1,7 @@
 ---
 title: "POST /api/v1/newton/solve — Newton-Raphson Optimization"
 sidebarTitle: "Newton Solve"
-description: "Optimize a single-variable polynomial using Newton-Raphson on f′(x). Requires an initial guess x₀ and converges quadratically to the nearest critical point."
+description: "Optimize a single-variable polynomial using Newton-Raphson on f′(x). Provide an initial guess x₀; converges quadratically to the nearest critical point."
 ---
 
 The `/api/v1/newton/solve` endpoint finds the optimum of a single-variable polynomial by applying the **Newton-Raphson method** to the first derivative `f′(x)`. Starting from an initial guess `x₀`, each iteration refines the estimate using `xₙ₊₁ = xₙ − f′(xₙ) / f″(xₙ)` until convergence. The nature of the located critical point is verified using the second derivative `f″(x)`.
@@ -14,7 +14,7 @@ Compared to the Bisection method, Newton-Raphson typically converges much faster
 
 **`POST /api/v1/newton/solve`**
 
-```json
+```http
 Content-Type: application/json
 ```
 

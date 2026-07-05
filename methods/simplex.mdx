@@ -1,7 +1,7 @@
 ---
-title: "Simplex Method: Big-M Linear Programming Solver"
+title: "Simplex Method: Big-M Linear Programming Solver API"
 sidebarTitle: "Simplex"
-description: "Solve linear programming problems with 2–5 variables using the Big-M simplex method. Returns the optimal tableau, iteration history, and variable values."
+description: "Solve linear programs with 2–5 variables using the Big-M simplex method. Returns the optimal tableau, full iteration history, and variable values."
 ---
 
 The Simplex endpoint accepts a linear objective function and a set of linear constraints, then applies the Big-M simplex algorithm to find the optimal solution. It supports both maximization and minimization goals, handles mixed constraint types (`<=`, `>=`, `=`), and returns not only the final variable values but also the complete tableau at every iteration — making it practical for both production optimization and step-by-step educational inspection.
@@ -162,7 +162,7 @@ The following problem maximizes `3x₁ + 2x₂ + 5x₃` subject to three resourc
 </ResponseField>
 
 <ResponseField name="message" type="string | null">
-  Human-readable summary, e.g. `"Optimal solution found after 3 iteration(s)."`.
+  Human-readable summary, e.g. `"Se encontró una solución óptima después de 3 iteración(es)."`.
 </ResponseField>
 
 ### Response example
@@ -180,9 +180,9 @@ The following problem maximizes `3x₁ + 2x₂ + 5x₃` subject to three resourc
     { "basic_variable": "s3", "values": [0.0, 0.0,  0.0, 1.0, 0.0, -1.0, 1.0, 120.0] },
     { "basic_variable": "Z",  "values": [1.0, 0.0,  0.0, 0.0, 0.0,  2.0, 5.0, 1350.0] }
   ],
-  "iteration_tableaux": [ "... (one entry per pivot) ..." ],
+  "iteration_tableaux": [ "... (one IterationTableau object per pivot) ..." ],
   "graphical": null,
-  "message": "Optimal solution found after 3 iteration(s)."
+  "message": "Se encontró una solución óptima después de 3 iteración(es)."
 }
 ```
 

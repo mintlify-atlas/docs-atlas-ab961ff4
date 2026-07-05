@@ -168,7 +168,7 @@ curl -X POST http://localhost:8000/newton/solve \
   "optimal_value": 4.0,
   "nature": "máximo",
   "goal_satisfied": true,
-  "iterations_count": 1,
+  "iterations_count": 2,
   "iterations": [
     {
       "iteration": 1,
@@ -178,6 +178,15 @@ curl -X POST http://localhost:8000/newton/solve \
       "d2f_xn": -2.0,
       "x_next": 2.0,
       "step": 1.0
+    },
+    {
+      "iteration": 2,
+      "x_n": 2.0,
+      "f_xn": 4.0,
+      "df_xn": 0.0,
+      "d2f_xn": -2.0,
+      "x_next": 2.0,
+      "step": 0.0
     }
   ],
   "function_str": "-x² + 4x",
@@ -188,7 +197,7 @@ curl -X POST http://localhost:8000/newton/solve \
 ```
 
 <Note>
-  For a pure quadratic like −x² + 4x, Newton-Raphson converges **exactly in one step** because the Newton correction is itself exact. For higher-degree polynomials, multiple iterations are generally required.
+  For a pure quadratic like −x² + 4x, the Newton step from x₀ = 1 lands exactly on x = 2 after the first correction. However, convergence is only declared once the engine re-evaluates f′ at the new point and confirms |f′(xₙ)| \< tolerance — so **two iterations** are recorded: the first produces x_next = 2.0, and the second confirms f′(2.0) = 0. For higher-degree polynomials, additional iterations are generally required.
 </Note>
 
 ---

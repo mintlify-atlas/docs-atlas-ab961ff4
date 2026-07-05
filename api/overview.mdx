@@ -1,7 +1,7 @@
 ---
-title: "Simplex Optimizer REST API Overview"
+title: "Simplex Optimizer REST API – Endpoints and Conventions"
 sidebarTitle: "Overview"
-description: "The Simplex Optimizer REST API provides nine solver endpoints under /api/v1. No authentication required. All endpoints accept and return JSON."
+description: "Complete reference for the Simplex Optimizer REST API: 15 endpoints across 7 solver groups under /api/v1. No authentication required. JSON in, JSON out."
 ---
 
 The Simplex Optimizer backend is a FastAPI application that exposes seven solver groups—covering linear programming, binary and pure integer programming, single-variable optimization, multivariable gradient descent, and constrained nonlinear programming via KKT—through a single REST API. Every route follows the same conventions: POST to a `/solve` endpoint with a JSON body, GET a `/health` endpoint to verify liveness, and read back a structured JSON response. There is no authentication layer; the API is open by design for local and classroom use.
@@ -29,7 +29,7 @@ Content-Type: application/json
 
 ## Endpoints
 
-The table below lists all 14 endpoints exposed by the API.
+The table below lists all 15 endpoints exposed by the API.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -83,25 +83,25 @@ FastAPI automatically generates two interactive API explorers from the OpenAPI s
 ## Endpoint Groups
 
 <CardGroup cols={2}>
-  <Card title="Simplex (LP)" icon="table" href="/api/endpoints/simplex">
+  <Card title="Simplex (LP)" icon="table" href="api/endpoints/simplex">
     Solve linear programmes with 2–5 variables using the Big-M Simplex method. Includes graphical output for two-variable problems.
   </Card>
-  <Card title="Binary Integer" icon="binary" href="/api/endpoints/binary">
+  <Card title="Binary Integer" icon="binary" href="api/endpoints/binary">
     Solve binary (0/1) integer programmes via Branch & Bound, with a full enumeration tree returned in the response.
   </Card>
-  <Card title="Pure Integer" icon="hashtag" href="/api/endpoints/integer">
+  <Card title="Pure Integer" icon="hashtag" href="api/endpoints/integer">
     Solve pure integer programmes via Branch & Bound with variable-specific lower and upper bound branching.
   </Card>
-  <Card title="Bisection" icon="scissors" href="/api/endpoints/bisection">
+  <Card title="Bisection" icon="scissors" href="api/endpoints/bisection">
     Find optima of single-variable polynomials by applying bisection to the first derivative f′(x).
   </Card>
-  <Card title="Newton-Raphson" icon="chart-line" href="/api/endpoints/newton">
+  <Card title="Newton-Raphson" icon="chart-line" href="api/endpoints/newton">
     Find optima of single-variable polynomials using second-order Newton-Raphson iteration on f′(x).
   </Card>
-  <Card title="Gradient Descent" icon="arrow-trend-down" href="/api/endpoints/gradient">
+  <Card title="Gradient Descent" icon="arrow-trend-down" href="api/endpoints/gradient">
     Optimize symbolic multivariable functions (2–3 variables) via gradient descent or ascent, with optional graphical surface data.
   </Card>
-  <Card title="KKT" icon="circle-nodes" href="/api/endpoints/kkt">
+  <Card title="KKT" icon="circle-nodes" href="api/endpoints/kkt">
     Solve constrained nonlinear programmes by enumerating active-constraint combinations and applying KKT conditions via multivariable Newton.
   </Card>
 </CardGroup>

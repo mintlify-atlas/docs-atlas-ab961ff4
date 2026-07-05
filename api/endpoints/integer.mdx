@@ -1,7 +1,7 @@
 ---
 title: "POST /api/v1/integer/solve — Pure Integer Programming"
 sidebarTitle: "Integer Solve"
-description: "Solve pure integer programming problems with 2–5 variables via Branch & Bound. All decision variables must be non-negative integers. Returns the optimal solution and B&B tree."
+description: "Solve pure integer programs with 2–5 variables via Branch & Bound. All variables must be non-negative integers. Returns the optimal solution and B&B tree."
 ---
 
 The `/api/v1/integer/solve` endpoint solves Pure Integer Programming (IP) problems where every decision variable must take a non-negative integer value. The solver uses Branch & Bound with LP relaxation at each node, branching by applying floor/ceil bounds to fractional variables until an integer-feasible optimal solution is confirmed or the problem is shown to be infeasible.
@@ -12,7 +12,7 @@ The `/api/v1/integer/solve` endpoint solves Pure Integer Programming (IP) proble
 
 **`POST /api/v1/integer/solve`**
 
-```json
+```http
 Content-Type: application/json
 ```
 

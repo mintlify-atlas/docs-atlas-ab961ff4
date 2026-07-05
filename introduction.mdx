@@ -1,7 +1,7 @@
 ---
 title: "Simplex Optimizer: Multi-Method Optimization Platform"
 sidebarTitle: "Introduction"
-description: "Simplex Optimizer provides nine optimization algorithms — from LP Simplex to KKT conditions — via a REST API and an interactive React frontend with visual output."
+description: "Simplex Optimizer exposes eight optimization solvers — from LP Simplex to KKT conditions — via a REST API and a React 18 frontend with Plotly charts."
 ---
 
 Simplex Optimizer is a full-stack mathematical optimization platform that gives engineers, researchers, and students a single, consistent interface for solving a wide class of optimization problems — linear, integer, nonlinear, and constrained. A FastAPI backend exposes every algorithm as a versioned REST endpoint, while a React 18 frontend lets you build and solve problems interactively and inspect results through dynamic tables and Plotly charts, all without writing a line of code.
@@ -15,16 +15,13 @@ The project is organized as a monorepo with two independent services that talk o
 
 Both services are independently runnable and communicate through a configurable base URL (`VITE_API_URL`), making it straightforward to deploy the backend on a server while hosting the frontend statically.
 
-## Nine Optimization Methods
+## Eight Optimization Methods
 
-Simplex Optimizer ships nine solvers, each available as its own REST endpoint under `/api/v1`:
+Simplex Optimizer ships eight solvers, each available as its own REST endpoint under `/api/v1`:
 
 <CardGroup cols={2}>
   <Card title="Simplex (Big-M)" icon="table-columns">
-    Solves bounded LP problems via the Big-M method. Supports maximization and minimization with `<=`, `>=`, and `=` constraints. Returns the full pivot tableau at every iteration.
-  </Card>
-  <Card title="Graphical LP" icon="chart-scatter">
-    Plots the feasible region and objective function for two-variable LP problems. Ideal for visualizing corner-point solutions on a 2D plane.
+    Solves LP problems via the Big-M method. Supports maximization and minimization with `<=`, `>=`, and `=` constraints. Returns the full pivot tableau at every iteration. For two-variable problems the response also includes graphical feasibility region data for Plotly rendering.
   </Card>
   <Card title="Binary Integer (B&B)" icon="binary">
     Branch-and-bound solver for binary integer programming problems, where decision variables are restricted to 0 or 1.
@@ -71,7 +68,7 @@ Simplex Optimizer ships nine solvers, each available as its own REST endpoint un
     Run the backend and frontend locally in under five minutes and make your first API call.
   </Card>
   <Card title="API Reference" icon="code" href="/api/overview">
-    Full endpoint documentation for all nine solvers, generated from the live OpenAPI schema.
+    Full endpoint documentation for all eight solvers, generated from the live OpenAPI schema.
   </Card>
   <Card title="Methods" icon="function" href="/methods">
     Deep-dive explanations of the algorithms, input schemas, and example requests for each solver.

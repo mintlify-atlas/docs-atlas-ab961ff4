@@ -1,7 +1,7 @@
 ---
-title: "Pure Integer Programming via Branch and Bound"
+title: "Pure Integer Programming with Branch and Bound Solver"
 sidebarTitle: "Pure Integer"
-description: "Solve general integer programs with 2–5 non-negative integer variables using Branch and Bound with dynamic lower and upper bounds at each node."
+description: "Solve linear integer programs with 2–5 non-negative integer variables using Branch and Bound with dynamic lower and upper bounds at each node."
 ---
 
 Pure Integer Programming (IP) solves linear optimization problems in which every decision variable must be a non-negative integer. Unlike Binary Integer Programming — where each variable is restricted to exactly 0 or 1 — pure integer variables can take any non-negative integer value (0, 1, 2, 3, …). The solver uses a Branch and Bound algorithm that systematically explores candidate solutions while pruning regions that cannot improve the best integer solution found so far.
@@ -11,8 +11,8 @@ Pure Integer Programming (IP) solves linear optimization problems in which every
 The algorithm begins by solving the **LP relaxation** of the problem at the root node (integrality constraints are temporarily dropped). It then proceeds depth-first through a search tree:
 
 1. **Integer solution found** — if all variables in the LP solution are already integers, the node is recorded as a candidate and the best-known bound is updated.
-2. **Prune by bound** — if the LP objective at a node is no better than the current best integer solution, the subtree is discarded.
-3. **Prune by infeasibility** — if the LP relaxation at a node is infeasible or unbounded, the subtree is discarded.
+2. **Prune by infeasibility** — if the LP relaxation at a node is infeasible or unbounded, the subtree is discarded.
+3. **Prune by bound** — if the LP objective at a node is no better than the current best integer solution, the subtree is discarded.
 4. **Branch** — the algorithm selects the most-fractional variable (the one whose fractional part is closest to 0.5) and creates two child nodes:
    - **Floor child**: adds the constraint xᵢ ≤ ⌊v⌋
    - **Ceil child**: adds the constraint xᵢ ≥ ⌈v⌉

@@ -1,7 +1,7 @@
 ---
 title: "POST /api/v1/simplex/solve — Linear Programming Solver"
 sidebarTitle: "Simplex Solve"
-description: "Solve linear programming problems with 2–5 variables via the Simplex method. Returns the optimal tableau, solution variables, and graphical data for 2-variable problems."
+description: "Solve linear programs with 2–5 variables via the Simplex method. Returns the optimal tableau, iteration snapshots, and 2-variable graphical data."
 ---
 
 The `/api/v1/simplex/solve` endpoint accepts a linear objective function and a set of linear constraints, then applies the Simplex algorithm to find the optimal solution. Along with the final tableau the response includes a per-iteration snapshot of every pivot step, and — for 2-variable problems — a `graphical` payload ready for plotting.
@@ -12,7 +12,7 @@ The `/api/v1/simplex/solve` endpoint accepts a linear objective function and a s
 
 **`POST /api/v1/simplex/solve`**
 
-```json
+```http
 Content-Type: application/json
 ```
 
