@@ -1,0 +1,201 @@
+---
+title: "Run Simplex Optimizer Locally for Development"
+sidebarTitle: "Local Setup"
+description: "Step-by-step guide to running the FastAPI backend and React frontend on your local machine with hot-reload for development."
+---
+
+Getting Simplex Optimizer running locally takes just a few minutes. The project is split into two independent services — a Python FastAPI backend and a React + TypeScript frontend — each with its own dependency installation and environment configuration. Follow the steps below to bring both up on your machine with full hot-reload support.
+
+## Prerequisites
+
+Make sure the following tools are installed and available on your `PATH` before you begin:
+
+| Tool | Minimum version | Purpose |
+|------|----------------|---------|
+| Python | 3.11+ | Backend runtime |
+| Node.js | 18+ | Frontend runtime |
+| npm | Bundled with Node.js | Frontend package manager |
+| git | Any recent version | Cloning the repository |
+
+---
+
+## Backend Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/FabianeloV/Metodo-simplex.git
+    cd Metodo-simplex
+    ```
+  </Step>
+
+  <Step title="Create a virtual environment">
+    A virtual environment keeps the backend dependencies isolated from your system Python installation.
+
+    <CodeGroup>
+      ```bash Linux / macOS
+      cd backend
+      python -m venv .venv
+      ```
+      ```powershell Windows
+      cd backend
+      python -m venv .venv
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Activate the virtual environment">
+    <CodeGroup>
+      ```bash Linux / macOS
+      source .venv/bin/activate
+      ```
+      ```powershell Windows
+      .venv\Scripts\activate
+      ```
+    </CodeGroup>
+
+    Your terminal prompt should now be prefixed with `(.venv)` to confirm activation.
+  </Step>
+
+  <Step title="Install Python dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example file and edit it as needed. For a default local run no changes are required.
+
+    <CodeGroup>
+      ```bash Linux / macOS
+      cp .env.example .env
+      ```
+      ```powershell Windows
+      copy .env.example .env
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    uvicorn app.main:app --reload --port 8000
+    ```
+
+    The `--reload` flag watches for source changes and automatically restarts the server.
+  </Step>
+</Steps>
+
+---
+
+## Frontend Setup
+
+<Steps>
+  <Step title="Navigate to the frontend directory">
+    Open a **new terminal** from the repository root (keep the backend terminal running).
+
+    ```bash
+    cd frontend
+    ```
+  </Step>
+
+  <Step title="Install Node.js dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Configure environment variables">
+    <CodeGroup>
+      ```bash Linux / macOS
+      cp .env.example .env
+      ```
+      ```powershell Windows
+      copy .env.example .env
+      ```
+    </CodeGroup>
+
+    Open `.env` and confirm (or set) the backend URL:
+
+    ```env
+    # URL del backend FastAPI (sin barra final)
+    VITE_API_URL=http://localhost:8000/api/v1
+    ```
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    npm run dev
+    ```
+
+    Vite starts a local server on port **5173** with Hot Module Replacement enabled.
+  </Step>
+</Steps>
+
+---
+
+## Access Points
+
+Once both servers are running, open the following URLs in your browser:
+
+| Service | URL |
+|---------|-----|
+| React frontend | [http://localhost:5173](http://localhost:5173) |
+| FastAPI backend (root) | [http://localhost:8000](http://localhost:8000) |
+| Swagger UI (interactive docs) | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| ReDoc | [http://localhost:8000/redoc](http://localhost:8000/redoc) |
+
+<Tip>
+  The Vite dev server is pre-configured to proxy any request beginning with `/api` to `http://localhost:8000`, so you can call backend endpoints directly from the browser without encountering CORS issues during development.
+</Tip>
+
+---
+
+## Environment Variables Reference
+
+### Backend (`backend/.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `APP_HOST` | `0.0.0.0` | Interface the Uvicorn server binds to |
+| `APP_PORT` | `8000` | Port the backend listens on |
+| `APP_RELOAD` | `true` | Enables Uvicorn auto-reload on file changes |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed CORS origins |
+
+### Frontend (`frontend/.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8000/api/v1` | Base URL for all API requests (no trailing slash) |
+
+---
+
+## Health Check
+
+After both servers are running, verify the backend is responding correctly:
+
+```bash
+curl http://localhost:8000/api/v1/simplex/health
+```
+
+You can also confirm the API root:
+
+```bash
+curl http://localhost:8000/
+# {"message":"Optimización Simplex API","docs":"/docs"}
+```
+
+---
+
+## Common Issues
+
+<Tip>
+  **`ModuleNotFoundError` on backend start** — Make sure your virtual environment is active (you should see `(.venv)` in your prompt) and that you ran `pip install -r requirements.txt` inside the `backend/` directory.
+</Tip>
+
+<Tip>
+  **Frontend shows a blank page or API errors** — Double-check that `VITE_API_URL` in `frontend/.env` does not have a trailing slash and matches the port your backend is running on (`http://localhost:8000/api/v1`). Restart `npm run dev` after any `.env` change for Vite to pick up new values.
+</Tip>
+
+<Tip>
+  **Port already in use** — If port `8000` or `5173` is occupied, stop the conflicting process or change the port. For the backend, pass `--port <NUMBER>` to the `uvicorn` command and update `VITE_API_URL` accordingly. For the frontend, Vite will automatically suggest the next available port.
+</Tip>

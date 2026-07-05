@@ -1,0 +1,217 @@
+---
+title: "Simplex Method: Big-M Linear Programming Solver"
+sidebarTitle: "Simplex"
+description: "Solve linear programming problems with 2–5 variables using the Big-M simplex method. Returns the optimal tableau, iteration history, and variable values."
+---
+
+The Simplex endpoint accepts a linear objective function and a set of linear constraints, then applies the Big-M simplex algorithm to find the optimal solution. It supports both maximization and minimization goals, handles mixed constraint types (`<=`, `>=`, `=`), and returns not only the final variable values but also the complete tableau at every iteration — making it practical for both production optimization and step-by-step educational inspection.
+
+## When to use
+
+Use this endpoint when you need to solve a **linear programming (LP)** problem of the form:
+
+```
+optimize  c₁x₁ + c₂x₂ + … + cₙxₙ
+subject to  linear constraints on x₁ … xₙ
+            xᵢ ≥ 0
+```
+
+All decision variables are continuous and non-negative. For problems where variables must be restricted to 0 or 1, see the [Binary Integer](/methods/binary-integer) endpoint instead.
+
+<Note>
+  The solver supports **2 to 5 decision variables**. Every constraint must have exactly as many coefficients as there are variables in the objective function. Problems with exactly 2 variables additionally receive a `graphical` payload — see [Graphical Method](/methods/graphical) for details.
+</Note>
+
+---
+
+## Big-M algorithm
+
+The engine in `simplex_engine.py` uses the **Big-M method** to handle all constraint types in a single phase:
+
+1. **Objective conversion** — minimization problems are converted to maximization internally by negating the objective coefficients (`sign = -1`). The final value is negated back before it is returned.
+
+2. **Row normalization** — any constraint row whose right-hand side is negative is multiplied by `-1` and its inequality is flipped, guaranteeing `b ≥ 0` throughout.
+
+3. **Auxiliary variable construction**
+   - `<=` constraint → adds a **slack variable** `sᵢ` with coefficient `+1`.
+   - `>=` constraint → adds a **surplus variable** `srᵢ` (`-1`) plus an **artificial variable** `aᵢ` (`+1`).
+   - `=` constraint → adds an **artificial variable** `aᵢ` (`+1`) only.
+
+4. **Big-M penalty** — each artificial variable receives a coefficient of `1 000 000` in the objective row, making it extremely costly to keep artificials in the basis.
+
+5. **Pivot selection**
+   - *Entering variable*: column with the most negative coefficient in the objective row.
+   - *Leaving variable*: minimum ratio test (`RHS / pivot column entry`) among rows where the entry is positive (`> ε`).
+
+6. **Gaussian elimination** — the pivot row is divided by the pivot element; then every other row (including the objective row) has a multiple of the pivot row subtracted to produce a unit column.
+
+7. **Termination checks**
+   - *Optimal*: no negative coefficient remains in the objective row.
+   - *Unbounded*: a pivot column has no positive entry in the constraint rows.
+   - *Infeasible*: after optimality, an artificial variable remains in the basis with a value greater than `ε`.
+
+A snapshot of the full tableau (excluding artificial-variable columns) is saved before iteration 0 and after every pivot, building the `iteration_tableaux` array.
+
+---
+
+## Endpoint
+
+```
+POST /api/v1/simplex/solve
+```
+
+---
+
+## Request
+
+<ParamField body="objective" type="number[]" required>
+  Coefficients of the objective function, one per decision variable. Length must be between **2 and 5**.
+
+  Example: `[3, 2, 5]` represents `3x₁ + 2x₂ + 5x₃`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="Constraint[]" required>
+  Array of constraint objects. At least one constraint is required. Every constraint must have the same number of coefficients as `objective`.
+
+  <Expandable title="Constraint object fields">
+    <ParamField body="coefficients" type="number[]" required>
+      Left-hand side coefficients, one per decision variable.
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Constraint type. Accepted values: `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="number" required>
+      Right-hand side constant.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Request example
+
+The following problem maximizes `3x₁ + 2x₂ + 5x₃` subject to three resource constraints — the same example shown in the project README.
+
+```json
+{
+  "objective": [3, 2, 5],
+  "goal": "max",
+  "constraints": [
+    { "coefficients": [1, 0, 1], "inequality": "<=", "rhs": 430 },
+    { "coefficients": [0, 1, 1], "inequality": "<=", "rhs": 460 },
+    { "coefficients": [1, 1, 0], "inequality": "<=", "rhs": 420 }
+  ]
+}
+```
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  Solution status. One of `"optimal"`, `"unbounded"`, or `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="objective_value" type="number | null">
+  Optimal value of the objective function. `null` when no solution exists.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Dictionary mapping variable names to their optimal values, e.g. `{ "x1": 0.0, "x2": 100.0, "x3": 230.0 }`. Variable values are rounded to 8 decimal places. `null` when no solution exists.
+</ResponseField>
+
+<ResponseField name="iterations" type="number | null">
+  Number of pivot operations performed.
+</ResponseField>
+
+<ResponseField name="tableau_headers" type="string[] | null">
+  Column labels for the final tableau, e.g. `["Básica", "Z", "x1", "x2", "x3", "s1", "s2", "s3", "RHS"]`. Artificial-variable columns are omitted.
+</ResponseField>
+
+<ResponseField name="tableau_rows" type="TableauRow[] | null">
+  Rows of the final simplex tableau, including the objective (`Z`) row.
+
+  <Expandable title="TableauRow fields">
+    <ResponseField name="basic_variable" type="string">
+      Name of the basic variable for this row (e.g. `"x2"`, `"s1"`, `"Z"`).
+    </ResponseField>
+    <ResponseField name="values" type="number[]">
+      Numeric entries in row order matching `tableau_headers` (starting from the `Z` column).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="iteration_tableaux" type="IterationTableau[] | null">
+  One snapshot per iteration (iteration `0` is the initial tableau before any pivots).
+
+  <Expandable title="IterationTableau fields">
+    <ResponseField name="iteration" type="number">Index of this snapshot (0 = initial).</ResponseField>
+    <ResponseField name="entering" type="string | null">Name of the variable that entered the basis.</ResponseField>
+    <ResponseField name="leaving" type="string | null">Name of the variable that left the basis.</ResponseField>
+    <ResponseField name="tableau_headers" type="string[]">Column labels for this snapshot.</ResponseField>
+    <ResponseField name="tableau_rows" type="TableauRow[]">Tableau rows for this snapshot.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="graphical" type="GraphicalData | null">
+  Populated only when `objective` has exactly **2 coefficients**. Contains constraint lines, the feasible polygon, corner vertices, and the optimal point in 2D coordinates. See [Graphical Method](/methods/graphical) for the full field reference.
+</ResponseField>
+
+<ResponseField name="message" type="string | null">
+  Human-readable summary, e.g. `"Optimal solution found after 3 iteration(s)."`.
+</ResponseField>
+
+### Response example
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 1350.0,
+  "variables": { "x1": 0.0, "x2": 100.0, "x3": 230.0 },
+  "iterations": 3,
+  "tableau_headers": ["Básica", "Z", "x1", "x2", "x3", "s1", "s2", "s3", "RHS"],
+  "tableau_rows": [
+    { "basic_variable": "x3", "values": [0.0, 1.0,  0.0, 1.0, 1.0,  0.0, 0.0, 200.0] },
+    { "basic_variable": "x2", "values": [0.0, 0.0,  1.0, 1.0, 0.0,  1.0, 0.0, 100.0] },
+    { "basic_variable": "s3", "values": [0.0, 0.0,  0.0, 1.0, 0.0, -1.0, 1.0, 120.0] },
+    { "basic_variable": "Z",  "values": [1.0, 0.0,  0.0, 0.0, 0.0,  2.0, 5.0, 1350.0] }
+  ],
+  "iteration_tableaux": [ "... (one entry per pivot) ..." ],
+  "graphical": null,
+  "message": "Optimal solution found after 3 iteration(s)."
+}
+```
+
+---
+
+## cURL example
+
+<CodeGroup>
+```bash cURL
+curl -X POST http://localhost:8000/api/v1/simplex/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [3, 2, 5],
+    "goal": "max",
+    "constraints": [
+      { "coefficients": [1, 0, 1], "inequality": "<=", "rhs": 430 },
+      { "coefficients": [0, 1, 1], "inequality": "<=", "rhs": 460 },
+      { "coefficients": [1, 1, 0], "inequality": "<=", "rhs": 420 }
+    ]
+  }'
+```
+</CodeGroup>
+
+---
+
+## Automatic graphical output for 2-variable problems
+
+When the `objective` array has exactly **2 elements**, the endpoint automatically calls the graphical engine and appends a `graphical` object to the response. This object contains everything required to render a 2D feasibility plot — constraint boundary lines, the shaded feasible polygon, corner vertices, the optimal objective line, and the optimal point. No separate request is needed.
+
+<Tip>
+  Use `iteration_tableaux` to drive a step-by-step tableau walkthrough in the UI. Each entry records which variable entered and left the basis, so you can replay every pivot.
+</Tip>

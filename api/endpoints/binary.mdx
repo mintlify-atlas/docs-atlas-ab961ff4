@@ -1,0 +1,206 @@
+---
+title: "POST /api/v1/binary/solve — Binary Integer Programming"
+sidebarTitle: "Binary Solve"
+description: "Solve 0/1 binary integer programs with 2–5 variables using Branch & Bound. Returns the optimal binary assignment and the full B&B exploration tree."
+---
+
+The `/api/v1/binary/solve` endpoint solves Binary Integer Programming (BIP) problems where every decision variable is constrained to be either `0` or `1`. The solver uses Branch & Bound, relaxing the integrality constraints at each node to an LP and branching on fractional variables until a provably optimal 0/1 solution is found or the problem is declared infeasible.
+
+---
+
+## Request
+
+**`POST /api/v1/binary/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="objective" type="list[float]" required>
+  Coefficients of the objective function, one per binary variable. Must contain between **2 and 5** elements. Variables are named `x1`, `x2`, …, `x5` in order.
+
+  Example: `[3, 5]` represents `3x1 + 5x2`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="list[Constraint]" required>
+  At least one linear constraint. Every constraint must have the same number of coefficients as `objective`.
+
+  <Expandable title="Constraint object">
+    <ParamField body="coefficients" type="list[float]" required>
+      Left-hand-side coefficients, one per binary variable (2–5 elements, must match the length of `objective`).
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Relationship operator. One of `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="float" required>
+      Right-hand-side constant of the constraint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns a `BinaryResponse` object.
+
+<ResponseField name="status" type="string">
+  Outcome of the solve. One of:
+  - `"optimal"` — a best 0/1 solution was found.
+  - `"infeasible"` — no feasible 0/1 assignment satisfies all constraints.
+  - `"limit"` — the node limit was reached before proving optimality.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  Optimal objective value. `null` when `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Map of variable names to their optimal binary values (`0` or `1`), e.g. `{"x1": 1, "x2": 0}`. `null` when `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="nodes_explored" type="integer">
+  Total number of Branch & Bound nodes evaluated during the search.
+</ResponseField>
+
+<ResponseField name="nodes" type="list[BBNode]">
+  Complete Branch & Bound exploration tree, one entry per node.
+
+  <Expandable title="BBNode object">
+    <ResponseField name="node_id" type="integer">
+      Unique identifier of this B&B node (root is `0`).
+    </ResponseField>
+    <ResponseField name="parent_id" type="integer | null">
+      `node_id` of the parent node. `null` for the root node.
+    </ResponseField>
+    <ResponseField name="depth" type="integer">
+      Depth of this node in the B&B tree (root is depth `0`).
+    </ResponseField>
+    <ResponseField name="fixed_vars" type="object">
+      Map of variable names to their fixed binary values at this node, e.g. `{"x1": 1}`. Variables not listed remain free.
+    </ResponseField>
+    <ResponseField name="lp_value" type="float | null">
+      Optimal LP relaxation objective value at this node. `null` if the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="lp_vars" type="object | null">
+      Map of variable names to their LP relaxation values at this node. `null` if the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Node processing result. Common values: `"branched"`, `"pruned_bound"`, `"pruned_infeasible"`, `"integer_feasible"`.
+    </ResponseField>
+    <ResponseField name="branched_on" type="string | null">
+      Name of the variable selected for branching at this node (e.g. `"x2"`). `null` for leaf nodes.
+    </ResponseField>
+    <ResponseField name="edge_label" type="string | null">
+      Label on the tree edge from the parent to this node (e.g. `"x1=0"` or `"x1=1"`). `null` for the root node.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable status message describing the result.
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **3x1 + 5x2** subject to:
+- 2x1 + 4x2 ≤ 6
+- x1 + x2 ≤ 2
+
+(A classic 2-variable 0/1 knapsack-style problem.)
+
+```bash
+curl -X POST https://api.example.com/api/v1/binary/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [3, 5],
+    "goal": "max",
+    "constraints": [
+      {"coefficients": [2, 4], "inequality": "<=", "rhs": 6},
+      {"coefficients": [1, 1], "inequality": "<=", "rhs": 2}
+    ]
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 8.0,
+  "variables": {
+    "x1": 1,
+    "x2": 1
+  },
+  "nodes_explored": 3,
+  "nodes": [
+    {
+      "node_id": 0,
+      "parent_id": null,
+      "depth": 0,
+      "fixed_vars": {},
+      "lp_value": 8.5,
+      "lp_vars": {"x1": 1.0, "x2": 0.875},
+      "status": "branched",
+      "branched_on": "x2",
+      "edge_label": null
+    },
+    {
+      "node_id": 1,
+      "parent_id": 0,
+      "depth": 1,
+      "fixed_vars": {"x2": 0},
+      "lp_value": 4.5,
+      "lp_vars": {"x1": 1.0, "x2": 0.0},
+      "status": "pruned_bound",
+      "branched_on": null,
+      "edge_label": "x2=0"
+    },
+    {
+      "node_id": 2,
+      "parent_id": 0,
+      "depth": 1,
+      "fixed_vars": {"x2": 1},
+      "lp_value": 8.0,
+      "lp_vars": {"x1": 1.0, "x2": 1.0},
+      "status": "integer_feasible",
+      "branched_on": null,
+      "edge_label": "x2=1"
+    }
+  ],
+  "message": "Optimal binary solution found"
+}
+```
+
+<Note>
+  The `nodes` array forms a directed tree. Reconstruct the tree by linking each node to its parent via `parent_id`. The root node always has `parent_id: null` and `depth: 0`.
+</Note>
+
+<Warning>
+  All variables are implicitly restricted to `{0, 1}`. If the continuous LP relaxation at the root is already integer-feasible, the solver returns immediately without branching.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/binary/health`**
+
+Returns a liveness confirmation for the Binary Integer Programming service.
+
+```bash
+curl https://api.example.com/api/v1/binary/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "binary-optimizer-api"
+}
+```

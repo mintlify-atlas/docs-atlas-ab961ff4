@@ -1,0 +1,260 @@
+---
+title: "Binary Integer Programming via Branch and Bound"
+sidebarTitle: "Binary Integer"
+description: "Solve 0/1 binary integer programs with 2–5 variables using Branch and Bound. Returns the optimal solution and the full B&B exploration tree."
+---
+
+Binary Integer Programming (BIP) is a special case of integer programming in which every decision variable is restricted to exactly two values: **0 or 1**. These problems arise naturally in yes/no decisions — selecting projects from a portfolio, assigning workers to shifts, or activating equipment — where a continuous relaxation would produce meaningless fractional answers. The `POST /api/v1/binary/solve` endpoint solves such problems using the Branch and Bound algorithm, returning both the optimal 0/1 variable assignment and the full exploration tree so the search process can be visualized.
+
+## When to use
+
+Use this endpoint when your LP has the additional requirement that all decision variables are binary integers (`xᵢ ∈ {0, 1}`). The objective function and constraints are otherwise identical in structure to those of the standard Simplex endpoint — same coefficient arrays, same inequality types, same right-hand sides.
+
+<Note>
+  The solver supports **2 to 5 binary decision variables**. Every constraint must have the same number of coefficients as there are entries in the `objective` array.
+</Note>
+
+---
+
+## Branch and Bound algorithm
+
+The engine in `binary_engine.py` performs a **depth-first Branch and Bound** search over the space of 0/1 assignments:
+
+1. **LP relaxation** — at each node, the subproblem is solved as a continuous LP by `SimplexEngine`, with every unfixed variable bounded to `[0, 1]` and every fixed variable forced to `xᵢ ≤ 0` (for `xᵢ = 0`) or `xᵢ ≥ 1` (for `xᵢ = 1`).
+
+2. **Integer feasibility check** — if the LP is optimal and all variable values are already integer (within `ε = 1e-6`), the node is recorded as `"integer"` and, if its objective is better than the current incumbent, it becomes the new best solution.
+
+3. **Bounding and pruning** — if an incumbent already exists and the node's LP relaxation value is no better than the current best (for maximization, `lp_val ≤ best_val`; for minimization, `lp_val ≥ best_val`), the node is pruned as `"pruned_bound"`.
+
+4. **Infeasibility pruning** — if the LP relaxation is infeasible or unbounded, the node is pruned as `"pruned_infeasible"`.
+
+5. **Branching** — when fractional variables remain, the algorithm selects the **most fractional** variable (the one closest to `0.5`) as the branch variable. Two child nodes are pushed onto the DFS stack: one fixing that variable to `1` (explored first) and one fixing it to `0`.
+
+6. **Node limit** — the search terminates after at most **500 nodes** (`MAX_NODES`) to prevent runaway execution on large instances. If the limit is reached the response status is `"limit"`.
+
+---
+
+## Endpoint
+
+```
+POST /api/v1/binary/solve
+```
+
+---
+
+## Request
+
+<ParamField body="objective" type="number[]" required>
+  Coefficients of the objective function, one per binary variable. Length must be between **2 and 5**.
+
+  Example: `[1, 6, 10, 16]` represents `x₁ + 6x₂ + 10x₃ + 16x₄`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="Constraint[]" required>
+  Array of linear constraint objects. At least one constraint is required. Constraint coefficients must each have the same length as `objective`.
+
+  <Expandable title="Constraint object fields">
+    <ParamField body="coefficients" type="number[]" required>
+      Left-hand side coefficients, one per binary variable.
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Constraint direction: `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="number" required>
+      Right-hand side constant.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Request example
+
+The following problem selects a subset of four binary projects to maximize profit subject to a weight capacity of 22 units.
+
+```json
+{
+  "objective": [1, 6, 10, 16],
+  "goal": "max",
+  "constraints": [
+    { "coefficients": [2, 4, 6, 9], "inequality": "<=", "rhs": 22 }
+  ]
+}
+```
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  Final solution status. One of:
+  - `"optimal"` — a globally optimal 0/1 solution was found.
+  - `"infeasible"` — no feasible integer solution exists.
+  - `"limit"` — the 500-node exploration limit was reached before proving optimality.
+</ResponseField>
+
+<ResponseField name="objective_value" type="number | null">
+  Optimal objective value for the best integer solution found. `null` when the problem is infeasible.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Dictionary mapping variable names to their optimal binary values (always `0` or `1`), e.g. `{ "x1": 0, "x2": 1, "x3": 0, "x4": 1 }`. `null` when infeasible.
+</ResponseField>
+
+<ResponseField name="nodes_explored" type="number">
+  Total number of B&B nodes evaluated during the search.
+</ResponseField>
+
+<ResponseField name="nodes" type="BBNode[]">
+  Full exploration tree as a flat list of node objects. The frontend uses this array to render the Branch and Bound tree visualization. Parent–child relationships are encoded via `parent_id`.
+
+  <Expandable title="BBNode fields">
+    <ResponseField name="node_id" type="number">
+      Unique integer identifier of this node, assigned in DFS traversal order starting at `0`.
+    </ResponseField>
+    <ResponseField name="parent_id" type="number | null">
+      `node_id` of the parent node. `null` for the root node.
+    </ResponseField>
+    <ResponseField name="depth" type="number">
+      Depth of this node in the tree (root = `0`).
+    </ResponseField>
+    <ResponseField name="fixed_vars" type="object">
+      Variables fixed at this node and their forced values, e.g. `{ "x2": 1, "x3": 0 }`. Empty `{}` at the root.
+    </ResponseField>
+    <ResponseField name="lp_value" type="number | null">
+      Objective value of the LP relaxation at this node. `null` when the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="lp_vars" type="object | null">
+      LP relaxation variable values at this node, e.g. `{ "x1": 1.0, "x2": 0.667, "x3": 0.0 }`. `null` when the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Outcome for this node. One of:
+      - `"branched"` — node was split into two children.
+      - `"integer"` — LP solution was integer-feasible; recorded as a candidate.
+      - `"pruned_bound"` — LP bound could not improve the incumbent; pruned.
+      - `"pruned_infeasible"` — LP relaxation was infeasible; pruned.
+    </ResponseField>
+    <ResponseField name="branched_on" type="string | null">
+      Name of the variable branched on at this node, e.g. `"x2"`. `null` for leaf nodes.
+    </ResponseField>
+    <ResponseField name="edge_label" type="string | null">
+      Label for the edge connecting this node to its parent, e.g. `"x2 = 1"`. `null` for the root.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary, e.g. `"Optimal solution found with Z = 22.0. Nodes explored: 5."`.
+</ResponseField>
+
+### Response example
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 22.0,
+  "variables": { "x1": 0, "x2": 0, "x3": 0, "x4": 1 },
+  "nodes_explored": 5,
+  "nodes": [
+    {
+      "node_id": 0,
+      "parent_id": null,
+      "depth": 0,
+      "fixed_vars": {},
+      "lp_value": 23.111,
+      "lp_vars": { "x1": 0.0, "x2": 0.0, "x3": 0.444, "x4": 1.0 },
+      "status": "branched",
+      "branched_on": "x3",
+      "edge_label": null
+    },
+    {
+      "node_id": 1,
+      "parent_id": 0,
+      "depth": 1,
+      "fixed_vars": { "x3": 1 },
+      "lp_value": 20.667,
+      "lp_vars": { "x1": 0.0, "x2": 0.667, "x3": 1.0, "x4": 0.0 },
+      "status": "branched",
+      "branched_on": "x2",
+      "edge_label": "x3 = 1"
+    },
+    {
+      "node_id": 2,
+      "parent_id": 1,
+      "depth": 2,
+      "fixed_vars": { "x3": 1, "x2": 1 },
+      "lp_value": null,
+      "lp_vars": null,
+      "status": "pruned_infeasible",
+      "branched_on": null,
+      "edge_label": "x2 = 1"
+    },
+    {
+      "node_id": 3,
+      "parent_id": 1,
+      "depth": 2,
+      "fixed_vars": { "x3": 1, "x2": 0 },
+      "lp_value": 16.0,
+      "lp_vars": { "x1": 0.0, "x2": 0.0, "x3": 1.0, "x4": 0.0 },
+      "status": "integer",
+      "branched_on": null,
+      "edge_label": "x2 = 0"
+    },
+    {
+      "node_id": 4,
+      "parent_id": 0,
+      "depth": 1,
+      "fixed_vars": { "x3": 0 },
+      "lp_value": 22.0,
+      "lp_vars": { "x1": 0.0, "x2": 0.0, "x3": 0.0, "x4": 1.0 },
+      "status": "integer",
+      "branched_on": null,
+      "edge_label": "x3 = 0"
+    }
+  ],
+  "message": "Optimal solution found with Z = 22.0. Nodes explored: 5."
+}
+```
+
+---
+
+## cURL example
+
+<CodeGroup>
+```bash cURL
+curl -X POST http://localhost:8000/api/v1/binary/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [1, 6, 10, 16],
+    "goal": "max",
+    "constraints": [
+      { "coefficients": [2, 4, 6, 9], "inequality": "<=", "rhs": 22 }
+    ]
+  }'
+```
+</CodeGroup>
+
+---
+
+## Branch and Bound tree visualization
+
+The `nodes` array is designed to drive the frontend's interactive tree diagram. Because every node records its `node_id`, `parent_id`, `depth`, `edge_label`, and `status`, the frontend can reconstruct the full directed tree without any additional API calls.
+
+Each node is rendered with a colour that reflects its `status`:
+
+| Status | Meaning | Typical color |
+|---|---|---|
+| `"branched"` | Node was split further | Neutral / blue |
+| `"integer"` | Integer solution found | Green |
+| `"pruned_bound"` | Bound cut-off applied | Orange |
+| `"pruned_infeasible"` | LP was infeasible | Red |
+
+Edges are labelled with `edge_label` (e.g. `"x2 = 1"`) to show which branching decision led to each child node.
+
+<Tip>
+  For minimization problems the bounding condition is reversed: a node is pruned when its LP value is greater than or equal to the current incumbent. The `status` field always reflects the actual pruning reason regardless of the optimization direction.
+</Tip>

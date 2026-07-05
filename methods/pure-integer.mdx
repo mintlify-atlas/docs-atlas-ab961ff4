@@ -1,0 +1,228 @@
+---
+title: "Pure Integer Programming via Branch and Bound"
+sidebarTitle: "Pure Integer"
+description: "Solve general integer programs with 2–5 non-negative integer variables using Branch and Bound with dynamic lower and upper bounds at each node."
+---
+
+Pure Integer Programming (IP) solves linear optimization problems in which every decision variable must be a non-negative integer. Unlike Binary Integer Programming — where each variable is restricted to exactly 0 or 1 — pure integer variables can take any non-negative integer value (0, 1, 2, 3, …). The solver uses a Branch and Bound algorithm that systematically explores candidate solutions while pruning regions that cannot improve the best integer solution found so far.
+
+## How Branch and Bound Works
+
+The algorithm begins by solving the **LP relaxation** of the problem at the root node (integrality constraints are temporarily dropped). It then proceeds depth-first through a search tree:
+
+1. **Integer solution found** — if all variables in the LP solution are already integers, the node is recorded as a candidate and the best-known bound is updated.
+2. **Prune by bound** — if the LP objective at a node is no better than the current best integer solution, the subtree is discarded.
+3. **Prune by infeasibility** — if the LP relaxation at a node is infeasible or unbounded, the subtree is discarded.
+4. **Branch** — the algorithm selects the most-fractional variable (the one whose fractional part is closest to 0.5) and creates two child nodes:
+   - **Floor child**: adds the constraint xᵢ ≤ ⌊v⌋
+   - **Ceil child**: adds the constraint xᵢ ≥ ⌈v⌉
+
+Each node carries its own `lower_bounds` and `upper_bounds` dictionaries that accumulate all branching constraints from root to that node. The search stops when no more nodes remain, or the 500-node safety limit is reached.
+
+<Note>
+  **Pure Integer vs. Binary Integer:** In Binary Integer Programming every variable is fixed between 0 and 1, so branching simply assigns a variable to 0 or to 1. In Pure Integer Programming, variables can grow arbitrarily, so each branch instead tightens a lower or upper bound — tracked independently for every node in the tree.
+</Note>
+
+---
+
+## Endpoint
+
+```
+POST /integer/solve
+```
+
+---
+
+## Request
+
+Send a JSON body matching `IntegerRequest`. The structure is identical to a standard Simplex request — the engine enforces integrality automatically.
+
+### Body fields
+
+<ParamField body="objective" type="float[]" required>
+  Coefficients of the objective function, one per decision variable. Must contain between 2 and 5 elements. Variables are labelled `x1`, `x2`, … in the order they appear.
+
+  **Example:** `[5, 4]` represents the objective `5x1 + 4x2`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="Constraint[]" required>
+  Array of linear constraints. Each constraint object contains:
+
+  <Expandable title="Constraint object">
+    <ParamField body="coefficients" type="float[]" required>
+      Left-hand side coefficients, one per variable. Length must match `objective`.
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Constraint direction: `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="float" required>
+      Right-hand side scalar value.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+### Top-level fields
+
+<ResponseField name="status" type="string">
+  Result status of the solver run:
+  - `"optimal"` — a best integer solution was found and confirmed.
+  - `"infeasible"` — no feasible integer solution exists.
+  - `"limit"` — the 500-node exploration limit was reached; the best incumbent (if any) is returned.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  The optimal objective value achieved by the integer solution, or `null` when infeasible.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Mapping of variable names to their optimal **integer** values, e.g. `{"x1": 3, "x2": 2}`. `null` when infeasible.
+</ResponseField>
+
+<ResponseField name="nodes_explored" type="integer">
+  Total number of Branch and Bound nodes evaluated during the search.
+</ResponseField>
+
+<ResponseField name="nodes" type="IntegerNode[]">
+  Full list of every node visited during the search. Used by the frontend to render the interactive Branch and Bound tree visualization.
+
+  <Expandable title="IntegerNode fields">
+    <ResponseField name="node_id" type="integer">
+      Zero-based unique identifier for this node.
+    </ResponseField>
+
+    <ResponseField name="parent_id" type="integer | null">
+      `node_id` of the parent node, or `null` for the root.
+    </ResponseField>
+
+    <ResponseField name="depth" type="integer">
+      Depth of this node in the tree (root = 0).
+    </ResponseField>
+
+    <ResponseField name="lower_bounds" type="object">
+      Accumulated lower-bound constraints for this node, e.g. `{"x1": 3}` means `x1 ≥ 3`. Empty at the root.
+    </ResponseField>
+
+    <ResponseField name="upper_bounds" type="object">
+      Accumulated upper-bound constraints for this node, e.g. `{"x1": 2}` means `x1 ≤ 2`. Empty at the root.
+    </ResponseField>
+
+    <ResponseField name="lp_value" type="float | null">
+      Objective value of the LP relaxation solved at this node. `null` when the LP was infeasible.
+    </ResponseField>
+
+    <ResponseField name="lp_vars" type="object | null">
+      Variable values returned by the LP relaxation at this node, e.g. `{"x1": 2.5, "x2": 1.0}`. `null` when infeasible.
+    </ResponseField>
+
+    <ResponseField name="status" type="string">
+      Outcome of this node. One of:
+      - `"branched"` — the node was expanded and two children were created.
+      - `"integer"` — the LP relaxation yielded an all-integer solution.
+      - `"pruned_bound"` — the LP bound could not beat the best known solution.
+      - `"pruned_infeasible"` — the LP relaxation at this node was infeasible.
+    </ResponseField>
+
+    <ResponseField name="branched_on" type="string | null">
+      Name of the variable that was branched on (e.g. `"x1"`). `null` for non-branched nodes.
+    </ResponseField>
+
+    <ResponseField name="branch_direction" type="string | null">
+      Direction of the branch that produced this node: `"floor"` (≤ constraint added) or `"ceil"` (≥ constraint added). `null` for the root.
+    </ResponseField>
+
+    <ResponseField name="edge_label" type="string | null">
+      Human-readable label for the edge from the parent, e.g. `"x1 ≤ 2"` or `"x1 ≥ 3"`. Displayed on the tree visualization.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result, including the optimal value and the total number of nodes explored.
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **Z = 5x1 + 4x2** subject to:
+- 6x1 + 4x2 ≤ 24
+- x1 + 2x2 ≤ 6
+- x1, x2 ≥ 0 and integer
+
+```bash
+curl -X POST http://localhost:8000/integer/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [5, 4],
+    "goal": "max",
+    "constraints": [
+      { "coefficients": [6, 4], "inequality": "<=", "rhs": 24 },
+      { "coefficients": [1, 2], "inequality": "<=", "rhs": 6 }
+    ]
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 21.0,
+  "variables": { "x1": 3, "x2": 1 },
+  "nodes_explored": 5,
+  "nodes": [
+    {
+      "node_id": 0,
+      "parent_id": null,
+      "depth": 0,
+      "lower_bounds": {},
+      "upper_bounds": {},
+      "lp_value": 21.333333,
+      "lp_vars": { "x1": 3.333333, "x2": 1.0 },
+      "status": "branched",
+      "branched_on": "x1",
+      "branch_direction": null,
+      "edge_label": null
+    },
+    {
+      "node_id": 1,
+      "parent_id": 0,
+      "depth": 1,
+      "lower_bounds": { "x1": 4.0 },
+      "upper_bounds": {},
+      "lp_value": 20.0,
+      "lp_vars": { "x1": 4.0, "x2": 0.0 },
+      "status": "integer",
+      "branched_on": null,
+      "branch_direction": "ceil",
+      "edge_label": "x1 ≥ 4"
+    },
+    {
+      "node_id": 2,
+      "parent_id": 0,
+      "depth": 1,
+      "lower_bounds": {},
+      "upper_bounds": { "x1": 3.0 },
+      "lp_value": 21.0,
+      "lp_vars": { "x1": 3.0, "x2": 1.5 },
+      "status": "branched",
+      "branched_on": "x2",
+      "branch_direction": "floor",
+      "edge_label": "x1 ≤ 3"
+    }
+  ],
+  "message": "Solución entera óptima: Z = 21.0. Nodos explorados: 5."
+}
+```
+
+<Note>
+  The `nodes` array is consumed directly by the frontend tree visualization. Each node's `node_id` and `parent_id` form the edges of the directed graph, and `edge_label` is rendered on the connecting arc.
+</Note>

@@ -1,0 +1,224 @@
+---
+title: "POST /api/v1/kkt/solve — KKT Constrained Optimization"
+sidebarTitle: "KKT Solve"
+description: "Solve nonlinear constrained optimization problems (2–3 variables, 1–5 constraints) via Karush-Kuhn-Tucker conditions. Reports all KKT cases explored and the global optimum."
+---
+
+The `/api/v1/kkt/solve` endpoint solves nonlinear constrained optimization problems using the **Karush-Kuhn-Tucker (KKT) conditions**. The solver enumerates every combination of inequality constraints that could be active at the solution, constructs the corresponding KKT stationarity system, and solves it via multivariate Newton's method. All explored cases — valid and infeasible — are reported, along with the best feasible point.
+
+---
+
+## Request
+
+**`POST /api/v1/kkt/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="expression" type="string" required>
+  Symbolic expression of the objective function using Python/SymPy syntax. Must reference only the variable names listed in `variables`.
+
+  Example: `"x**2 + y**2"`, `"x**2 + 2*y**2 - x*y"`.
+</ParamField>
+
+<ParamField body="variables" type="list[string]" required>
+  List of variable names used in `expression`. Must contain **2 or 3** elements. Order determines the coordinate order throughout the response.
+
+  Example: `["x", "y"]` or `["x", "y", "z"]`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="list[KKTConstraint]" required>
+  Between **1 and 5** constraints. Each constraint defines one inequality or equality condition. Equality constraints (`"="`) are always active; inequality constraints are activated in all possible combinations during the case enumeration.
+
+  <Expandable title="KKTConstraint object">
+    <ParamField body="expression" type="string" required>
+      Symbolic left-hand-side expression of the constraint. Must reference only the variable names listed in `variables`.
+
+      Example: `"x + y"` for the constraint `x + y ≥ 1`.
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Constraint type. One of `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="float" required>
+      Right-hand-side constant of the constraint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns a `KKTResponse` object.
+
+<ResponseField name="status" type="string">
+  Overall outcome. One of:
+  - `"optimal"` — at least one case yielded a valid KKT point satisfying all constraints.
+  - `"infeasible"` — no valid KKT point was found across all explored cases.
+</ResponseField>
+
+<ResponseField name="variables" type="list[string]">
+  Variable names echoed from the request.
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable representation of the objective function as parsed by SymPy.
+</ResponseField>
+
+<ResponseField name="goal" type="string">
+  `"max"` or `"min"` — echoed from the request.
+</ResponseField>
+
+<ResponseField name="constraints_str" type="list[string]">
+  Human-readable string representation of each constraint (e.g. `["x + y >= 1"]`), in the same order as the request `constraints` array.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="list[float] | null">
+  Coordinates of the best valid KKT point found, in the same variable order as `variables`. `null` if `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  Objective function value at `optimal_point`. `null` if `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="optimal_case_id" type="integer | null">
+  `case_id` of the `KKTCase` that produced the optimal point. `null` if `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="cases" type="list[KKTCase]">
+  All KKT cases explored by the solver — one case per combination of active inequality constraints, plus all equality constraints.
+
+  <Expandable title="KKTCase object">
+    <ResponseField name="case_id" type="integer">
+      Sequential identifier of this case (0-based).
+    </ResponseField>
+    <ResponseField name="active_indices" type="list[integer]">
+      Indices (into the request `constraints` array) of constraints treated as active (binding) in this case.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Result of this case's KKT solve. One of:
+      - `"valid"` — the KKT point satisfies primal and dual feasibility.
+      - `"dual_infeasible"` — a Lagrange multiplier violated its sign condition.
+      - `"primal_infeasible"` — the found point violates at least one constraint.
+      - `"no_convergence"` — the Newton solver failed to converge for this case.
+    </ResponseField>
+    <ResponseField name="point" type="list[float] | null">
+      Coordinates of the KKT point found for this case. `null` if the case failed to converge.
+    </ResponseField>
+    <ResponseField name="lambdas" type="object | null">
+      Lagrange multipliers for **equality** constraints, keyed by a string label (e.g. `"lambda_0"`). `null` if the case failed to converge.
+    </ResponseField>
+    <ResponseField name="mus" type="object | null">
+      Lagrange multipliers for **inequality** constraints, keyed by a string label (e.g. `"mu_0"`). For a valid minimization case all `mu` values must be ≥ 0; for maximization ≤ 0. `null` if the case failed to converge.
+    </ResponseField>
+    <ResponseField name="objective_value" type="float | null">
+      Objective value at the KKT point for this case. `null` if the case failed to converge.
+    </ResponseField>
+    <ResponseField name="note" type="string">
+      Human-readable explanation of why this case was accepted or rejected.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cases_explored" type="integer">
+  Total number of KKT cases evaluated (always equals `len(cases)`).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the overall result.
+</ResponseField>
+
+---
+
+## Example
+
+Minimize **f(x, y) = x² + y²** subject to:
+- x + y ≥ 1
+
+```bash
+curl -X POST https://api.example.com/api/v1/kkt/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + y**2",
+    "variables": ["x", "y"],
+    "goal": "min",
+    "constraints": [
+      {"expression": "x + y", "inequality": ">=", "rhs": 1}
+    ]
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "variables": ["x", "y"],
+  "function_str": "x**2 + y**2",
+  "goal": "min",
+  "constraints_str": ["x + y >= 1"],
+  "optimal_point": [0.5, 0.5],
+  "optimal_value": 0.5,
+  "optimal_case_id": 1,
+  "cases": [
+    {
+      "case_id": 0,
+      "active_indices": [],
+      "status": "primal_infeasible",
+      "point": [0.0, 0.0],
+      "lambdas": {},
+      "mus": {},
+      "objective_value": 0.0,
+      "note": "Unconstrained optimum violates x + y >= 1"
+    },
+    {
+      "case_id": 1,
+      "active_indices": [0],
+      "status": "valid",
+      "point": [0.5, 0.5],
+      "lambdas": {},
+      "mus": {"mu_0": 1.0},
+      "objective_value": 0.5,
+      "note": "KKT conditions satisfied; mu_0 = 1.0 >= 0"
+    }
+  ],
+  "cases_explored": 2,
+  "message": "Optimal solution found at [0.5, 0.5] with f = 0.5"
+}
+```
+
+<Note>
+  The solver always includes a case with `active_indices: []` (all inequality constraints inactive), which corresponds to the unconstrained optimum. If that point satisfies all constraints it is returned immediately; otherwise the solver proceeds to cases with active constraints.
+</Note>
+
+<Warning>
+  The `expression` fields (both objective and constraints) are parsed by SymPy. Use Python-style operators: `**` for exponentiation, `*` for multiplication. Referencing variable names not in the `variables` list returns HTTP `422 Unprocessable Entity`.
+</Warning>
+
+<Note>
+  For a **minimization** problem, the dual feasibility condition requires all `mu` multipliers for `>=` inequality constraints to be **non-negative** (`mu ≥ 0`). Cases where this condition is violated are labelled `"dual_infeasible"` and excluded from the optimal selection.
+</Note>
+
+---
+
+## Health Check
+
+**`GET /api/v1/kkt/health`**
+
+Returns a liveness confirmation for the KKT Constrained Optimization service.
+
+```bash
+curl https://api.example.com/api/v1/kkt/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "kkt-optimizer-api"
+}
+```

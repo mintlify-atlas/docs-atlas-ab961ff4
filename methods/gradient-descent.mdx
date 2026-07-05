@@ -1,0 +1,207 @@
+---
+title: "Gradient Descent for Multivariable Optimization"
+sidebarTitle: "Gradient Descent"
+description: "Optimize multivariable functions with 2–3 variables using gradient descent or ascent. Accepts symbolic expressions and returns iteration history and convergence data."
+---
+
+Gradient descent (and its mirror, gradient ascent) optimizes a multivariable function by iteratively stepping in the direction that reduces or increases the function value most steeply. Starting from an initial point **x⁰**, each iteration updates the current position by following the gradient scaled by a fixed step size, stopping as soon as the gradient norm falls below a convergence tolerance.
+
+The update rule is:
+
+- **Minimization:** `x^(k+1) = x^k − α · ∇f(x^k)`
+- **Maximization:** `x^(k+1) = x^k + α · ∇f(x^k)`
+
+where `α` is the step size and `∇f` is the gradient of the objective function. Symbolic differentiation is performed automatically via SymPy, so you only need to provide the expression as a string.
+
+---
+
+## Endpoint
+
+```
+POST /api/v1/gradient/solve
+```
+
+---
+
+## Request
+
+<ParamField body="expression" type="string" required>
+  The objective function as a SymPy-compatible symbolic string. Use `**` for exponentiation and `*` for multiplication.
+
+  Examples: `"x**2 + y**2"`, `"3*x**2 - 2*x*y + y**2"`, `"x**2 + y**2 + z**2"`
+</ParamField>
+
+<ParamField body="variables" type="string[]" required>
+  List of variable names referenced in the expression. Must contain **2 or 3** names.
+
+  Example: `["x", "y"]`
+</ParamField>
+
+<ParamField body="x0" type="number[]" required>
+  Initial point for the iteration. Must have the same number of elements as `variables`.
+
+  Example: `[2.0, 3.0]`
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction. Either `"min"` (gradient descent) or `"max"` (gradient ascent).
+</ParamField>
+
+<ParamField body="step_size" type="number" default="0.1">
+  The step size `α` applied at each iteration. Must be strictly positive.
+
+  <Note>
+    A large step size can cause the method to diverge. If you receive a divergence error, try reducing `step_size` or choosing a different initial point.
+  </Note>
+</ParamField>
+
+<ParamField body="tolerance" type="number" default="1e-6">
+  Convergence threshold. The method stops when `‖∇f(x^k)‖ < tolerance`. Must be in the range `(0, 1]`.
+</ParamField>
+
+<ParamField body="max_iterations" type="number" default="100">
+  Maximum number of gradient steps before the method stops with `status: "no_convergence"`. Accepted range: 1–500.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  `"optimal"` if the gradient norm converged below `tolerance`; `"no_convergence"` if `max_iterations` was reached without convergence.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="number[] | null">
+  Coordinates of the best point found, ordered to match `variables`. `null` only on unexpected engine failure.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="number | null">
+  Function value at `optimal_point`.
+</ResponseField>
+
+<ResponseField name="gradient_norm" type="number | null">
+  Euclidean norm of the gradient at `optimal_point`. Convergence is declared when this falls below `tolerance`.
+</ResponseField>
+
+<ResponseField name="iterations_count" type="number">
+  Total number of iterations executed.
+</ResponseField>
+
+<ResponseField name="iterations" type="GradientIteration[]">
+  Full iteration history. Each entry captures the state at the **start** of that step.
+
+  <Expandable title="GradientIteration fields">
+    <ResponseField name="iteration" type="number">
+      1-based iteration index.
+    </ResponseField>
+    <ResponseField name="point" type="number[]">
+      Current position `x^k` at the start of this step.
+    </ResponseField>
+    <ResponseField name="gradient" type="number[]">
+      Gradient vector `∇f(x^k)` at this step.
+    </ResponseField>
+    <ResponseField name="gradient_norm" type="number">
+      Euclidean norm `‖∇f(x^k)‖`. When this drops below `tolerance`, the loop terminates.
+    </ResponseField>
+    <ResponseField name="f_value" type="number">
+      Objective function value `f(x^k)` at this step.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  The objective expression as simplified by SymPy, confirming what was parsed.
+</ResponseField>
+
+<ResponseField name="gradient_str" type="string[]">
+  Symbolic partial derivatives `[∂f/∂x₁, ∂f/∂x₂, …]` as SymPy-formatted strings, one per variable.
+</ResponseField>
+
+<ResponseField name="variables" type="string[]">
+  Echo of the variable names provided in the request, in the same order.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary describing the convergence outcome and the optimal point coordinates.
+</ResponseField>
+
+---
+
+## Expression Format
+
+Expressions must use SymPy-compatible syntax:
+
+| Operation      | Syntax          | Example            |
+|----------------|-----------------|--------------------|
+| Exponentiation | `**`            | `x**2`             |
+| Multiplication | `*`             | `3*x*y`            |
+| Addition       | `+`             | `x**2 + y**2`      |
+| Functions      | SymPy names     | `sin(x) + cos(y)`  |
+
+<Tip>
+  Variable names in `expression` must exactly match the entries in `variables`. For example, if `variables` is `["x", "y"]`, the expression must use `x` and `y` — not `X`, `x1`, or any other spelling.
+</Tip>
+
+---
+
+## Example
+
+Minimize `f(x, y) = x² + y²` starting from the point `(2, 3)`:
+
+```bash
+curl -X POST https://api.example.com/api/v1/gradient/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + y**2",
+    "variables": ["x", "y"],
+    "x0": [2.0, 3.0],
+    "goal": "min",
+    "step_size": 0.1,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "status": "optimal",
+  "optimal_point": [2.8421709430404007e-14, 4.263256414560601e-14],
+  "optimal_value": 2.6280978085873137e-27,
+  "gradient_norm": 9.979452093022748e-13,
+  "iterations_count": 34,
+  "iterations": [
+    {
+      "iteration": 1,
+      "point": [2.0, 3.0],
+      "gradient": [4.0, 6.0],
+      "gradient_norm": 7.211102550927978,
+      "f_value": 13.0
+    },
+    {
+      "iteration": 2,
+      "point": [1.6, 2.4],
+      "gradient": [3.2, 4.8],
+      "gradient_norm": 5.768882040742382,
+      "f_value": 8.32
+    }
+  ],
+  "function_str": "x**2 + y**2",
+  "gradient_str": ["2*x", "2*y"],
+  "variables": ["x", "y"],
+  "message": "El método convergió al punto (x = 2.84217e-14, y = 4.26326e-14) con f = 2.6281e-27 y ‖∇f‖ = 9.98e-13."
+}
+```
+
+---
+
+## Convergence Notes
+
+<Note>
+  Convergence is declared when `gradient_norm < tolerance`. If the method reaches `max_iterations` without this condition being met, `status` is set to `"no_convergence"` and the best-reached point is still returned. You can increase `max_iterations` or decrease `step_size` to improve convergence.
+</Note>
+
+<Warning>
+  If the function is unbounded in the optimization direction (e.g., maximizing an unbounded function), the iteration will diverge and the engine will raise a 422 error. Choose a bounded function or a constrained method such as KKT.
+</Warning>

@@ -1,0 +1,216 @@
+---
+title: "POST /api/v1/integer/solve — Pure Integer Programming"
+sidebarTitle: "Integer Solve"
+description: "Solve pure integer programming problems with 2–5 variables via Branch & Bound. All decision variables must be non-negative integers. Returns the optimal solution and B&B tree."
+---
+
+The `/api/v1/integer/solve` endpoint solves Pure Integer Programming (IP) problems where every decision variable must take a non-negative integer value. The solver uses Branch & Bound with LP relaxation at each node, branching by applying floor/ceil bounds to fractional variables until an integer-feasible optimal solution is confirmed or the problem is shown to be infeasible.
+
+---
+
+## Request
+
+**`POST /api/v1/integer/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="objective" type="list[float]" required>
+  Coefficients of the objective function, one per decision variable. Must contain between **2 and 5** elements. Variables are named `x1`, `x2`, …, `x5` in order.
+
+  Example: `[5, 8]` represents `5x1 + 8x2`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="list[Constraint]" required>
+  At least one linear constraint. Every constraint must have the same number of coefficients as `objective`.
+
+  <Expandable title="Constraint object">
+    <ParamField body="coefficients" type="list[float]" required>
+      Left-hand-side coefficients, one per decision variable (2–5 elements, must match the length of `objective`).
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Relationship operator. One of `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="float" required>
+      Right-hand-side constant of the constraint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns an `IntegerResponse` object.
+
+<ResponseField name="status" type="string">
+  Outcome of the solve. One of:
+  - `"optimal"` — a best integer solution was found.
+  - `"infeasible"` — no feasible integer assignment satisfies all constraints.
+  - `"limit"` — the node limit was reached before proving optimality.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  Optimal objective value at the best integer solution found. `null` when `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Map of variable names to their optimal integer values, e.g. `{"x1": 3, "x2": 2}`. `null` when `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="nodes_explored" type="integer">
+  Total number of Branch & Bound nodes evaluated during the search.
+</ResponseField>
+
+<ResponseField name="nodes" type="list[IntegerNode]">
+  Complete Branch & Bound exploration tree, one entry per node.
+
+  <Expandable title="IntegerNode object">
+    <ResponseField name="node_id" type="integer">
+      Unique identifier of this B&B node (root is `0`).
+    </ResponseField>
+    <ResponseField name="parent_id" type="integer | null">
+      `node_id` of the parent node. `null` for the root node.
+    </ResponseField>
+    <ResponseField name="depth" type="integer">
+      Depth of this node in the B&B tree (root is depth `0`).
+    </ResponseField>
+    <ResponseField name="lower_bounds" type="object">
+      Active lower bounds on variables at this node, e.g. `{"x1": 3.0}`. Inherits and extends the parent's bounds.
+    </ResponseField>
+    <ResponseField name="upper_bounds" type="object">
+      Active upper bounds on variables at this node, e.g. `{"x1": 3.0}`. Inherits and extends the parent's bounds.
+    </ResponseField>
+    <ResponseField name="lp_value" type="float | null">
+      Optimal LP relaxation objective value at this node. `null` if the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="lp_vars" type="object | null">
+      Map of variable names to their LP relaxation values at this node. `null` if the LP was infeasible.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Node processing result. Common values: `"branched"`, `"pruned_bound"`, `"pruned_infeasible"`, `"integer_feasible"`.
+    </ResponseField>
+    <ResponseField name="branched_on" type="string | null">
+      Name of the variable selected for branching at this node (e.g. `"x1"`). `null` for leaf nodes.
+    </ResponseField>
+    <ResponseField name="branch_direction" type="string | null">
+      Direction of the bound applied when creating this node: `"floor"` (upper bound set to ⌊value⌋) or `"ceil"` (lower bound set to ⌈value⌉). `null` for the root node.
+    </ResponseField>
+    <ResponseField name="edge_label" type="string | null">
+      Human-readable label on the tree edge from the parent to this node (e.g. `"x1 ≤ 3"`). `null` for the root node.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable status message describing the result.
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **5x1 + 8x2** subject to:
+- x1 + x2 ≤ 6
+- 5x1 + 9x2 ≤ 45
+
+```bash
+curl -X POST https://api.example.com/api/v1/integer/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [5, 8],
+    "goal": "max",
+    "constraints": [
+      {"coefficients": [1, 1], "inequality": "<=", "rhs": 6},
+      {"coefficients": [5, 9], "inequality": "<=", "rhs": 45}
+    ]
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 41.0,
+  "variables": {
+    "x1": 1,
+    "x2": 4
+  },
+  "nodes_explored": 5,
+  "nodes": [
+    {
+      "node_id": 0,
+      "parent_id": null,
+      "depth": 0,
+      "lower_bounds": {"x1": 0.0, "x2": 0.0},
+      "upper_bounds": {},
+      "lp_value": 41.25,
+      "lp_vars": {"x1": 1.25, "x2": 4.375},
+      "status": "branched",
+      "branched_on": "x2",
+      "branch_direction": null,
+      "edge_label": null
+    },
+    {
+      "node_id": 1,
+      "parent_id": 0,
+      "depth": 1,
+      "lower_bounds": {"x1": 0.0, "x2": 0.0},
+      "upper_bounds": {"x2": 4.0},
+      "lp_value": 41.0,
+      "lp_vars": {"x1": 1.0, "x2": 4.0},
+      "status": "integer_feasible",
+      "branched_on": null,
+      "branch_direction": "floor",
+      "edge_label": "x2 ≤ 4"
+    },
+    {
+      "node_id": 2,
+      "parent_id": 0,
+      "depth": 1,
+      "lower_bounds": {"x1": 0.0, "x2": 5.0},
+      "upper_bounds": {},
+      "lp_value": 40.0,
+      "lp_vars": {"x1": 0.0, "x2": 5.0},
+      "status": "pruned_bound",
+      "branched_on": null,
+      "branch_direction": "ceil",
+      "edge_label": "x2 ≥ 5"
+    }
+  ],
+  "message": "Optimal integer solution found"
+}
+```
+
+<Note>
+  Unlike the Binary solver, Pure Integer Programming allows each variable to take any non-negative integer value. The solver applies tighter `lower_bounds` and `upper_bounds` progressively as it branches deeper into the tree.
+</Note>
+
+<Warning>
+  All constraint `coefficients` arrays must have the **same length** as `objective`. Mismatched lengths return HTTP `422 Unprocessable Entity`.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/integer/health`**
+
+Returns a liveness confirmation for the Pure Integer Programming service.
+
+```bash
+curl https://api.example.com/api/v1/integer/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "integer-optimizer-api"
+}
+```

@@ -1,72 +1,90 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Simplex Optimizer",
+  "theme": "luma",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
-  },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
+    "primary": "#4F6EF7",
+    "light": "#EEF2FF",
+    "dark": "#1E2A78"
   },
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/FabianeloV/Metodo-simplex"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/FabianeloV/Metodo-simplex"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/overview",
+              "architecture/backend",
+              "architecture/frontend"
+            ]
+          },
+          {
+            "group": "Optimization Methods",
+            "pages": [
+              "methods/simplex",
+              "methods/graphical",
+              "methods/binary-integer",
+              "methods/pure-integer",
+              "methods/bisection",
+              "methods/newton-raphson",
+              "methods/gradient-descent",
+              "methods/graphical-multivar",
+              "methods/kkt"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/local",
+              "deployment/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/schemas"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/endpoints/simplex",
+              "api/endpoints/binary",
+              "api/endpoints/integer",
+              "api/endpoints/bisection",
+              "api/endpoints/newton",
+              "api/endpoints/gradient",
+              "api/endpoints/kkt"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

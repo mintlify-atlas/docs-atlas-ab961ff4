@@ -1,0 +1,198 @@
+---
+title: "POST /api/v1/bisection/solve — Bisection Optimization"
+sidebarTitle: "Bisection Solve"
+description: "Optimize a single-variable polynomial over a closed interval using the Bisection method on f′(x). Returns the optimal point, its nature, and a full iteration table."
+---
+
+The `/api/v1/bisection/solve` endpoint finds the optimum of a single-variable polynomial function on a specified interval `[a, b]`. Rather than minimising or maximising `f(x)` directly, the solver applies the Bisection method to the **first derivative** `f′(x)` to locate the root where `f′(x) = 0`. The nature of the critical point (maximum, minimum, or inflection) is then verified with the second derivative.
+
+---
+
+## Request
+
+**`POST /api/v1/bisection/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="coefficients" type="list[float]" required>
+  Polynomial coefficients listed from **highest to lowest degree**. Must contain between **1 and 11** elements (degree 0 through 10). The array must not be all-zero.
+
+  Examples:
+  - `[-1, 4, 0]` → `-x² + 4x + 0`
+  - `[1, -3, 2]` → `x² - 3x + 2`
+  - `[2, 0, -8, 0]` → `2x³ - 8x`
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="a" type="float" required>
+  Left endpoint of the search interval. Must be strictly less than `b`.
+</ParamField>
+
+<ParamField body="b" type="float" required>
+  Right endpoint of the search interval. Must be strictly greater than `a`.
+</ParamField>
+
+<ParamField body="tolerance" type="float" default="1e-6">
+  Convergence tolerance. The algorithm stops when the interval width falls below this value. Must be greater than `0` and at most `1.0`.
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="100">
+  Maximum number of bisection steps. Accepted range: **1–500**.
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns a `BisectionResponse` object.
+
+<ResponseField name="status" type="string">
+  Always `"optimal"` for a completed bisection run (convergence or `max_iterations` reached).
+</ResponseField>
+
+<ResponseField name="optimal_x" type="float | null">
+  The x-coordinate of the located critical point. `null` if no root of `f′(x)` was found in `[a, b]`.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  The function value `f(optimal_x)`. `null` if no critical point was found.
+</ResponseField>
+
+<ResponseField name="nature" type="string | null">
+  Classification of the critical point: `"maximum"`, `"minimum"`, or `"inflection point"`. `null` if no critical point was found.
+</ResponseField>
+
+<ResponseField name="goal_satisfied" type="boolean">
+  `true` when the `nature` of the found point matches the requested `goal` (e.g. a minimum was found when `goal` is `"min"`).
+</ResponseField>
+
+<ResponseField name="iterations_count" type="integer">
+  Actual number of bisection iterations performed before convergence.
+</ResponseField>
+
+<ResponseField name="iterations" type="list[BisectionIteration]">
+  Step-by-step iteration table, one entry per bisection step.
+
+  <Expandable title="BisectionIteration object">
+    <ResponseField name="iteration" type="integer">
+      1-based iteration number.
+    </ResponseField>
+    <ResponseField name="a" type="float">
+      Left endpoint of the interval at the start of this iteration.
+    </ResponseField>
+    <ResponseField name="b" type="float">
+      Right endpoint of the interval at the start of this iteration.
+    </ResponseField>
+    <ResponseField name="midpoint" type="float">
+      Midpoint `m = (a + b) / 2` evaluated this iteration.
+    </ResponseField>
+    <ResponseField name="f_mid" type="float">
+      Function value `f(midpoint)`.
+    </ResponseField>
+    <ResponseField name="df_mid" type="float">
+      First derivative value `f′(midpoint)`, used to decide the bisection direction.
+    </ResponseField>
+    <ResponseField name="interval_width" type="float">
+      Width `b − a` of the current interval; compared against `tolerance` to test convergence.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable string representation of `f(x)` (e.g. `"-x**2 + 4*x"`).
+</ResponseField>
+
+<ResponseField name="derivative_str" type="string">
+  Human-readable string representation of `f′(x)` (e.g. `"-2*x + 4"`).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result.
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **f(x) = −x² + 4x** on the interval `[0, 4]`.
+
+Coefficients from highest to lowest degree: `[-1, 4, 0]` (i.e. `−1·x² + 4·x + 0`).
+
+```bash
+curl -X POST https://api.example.com/api/v1/bisection/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coefficients": [-1, 4, 0],
+    "goal": "max",
+    "a": 0,
+    "b": 4,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "optimal_x": 2.0,
+  "optimal_value": 4.0,
+  "nature": "maximum",
+  "goal_satisfied": true,
+  "iterations_count": 22,
+  "iterations": [
+    {
+      "iteration": 1,
+      "a": 0.0,
+      "b": 4.0,
+      "midpoint": 2.0,
+      "f_mid": 4.0,
+      "df_mid": 0.0,
+      "interval_width": 4.0
+    },
+    {
+      "iteration": 2,
+      "a": 0.0,
+      "b": 2.0,
+      "midpoint": 1.0,
+      "f_mid": 3.0,
+      "df_mid": 2.0,
+      "interval_width": 2.0
+    }
+  ],
+  "function_str": "-x**2 + 4*x",
+  "derivative_str": "-2*x + 4",
+  "message": "Maximum found at x = 2.0 with f(x) = 4.0"
+}
+```
+
+<Note>
+  The solver applies the Bisection method to `f′(x)`, not to `f(x)` itself. Make sure the target critical point lies inside `[a, b]` and that `f′(a)` and `f′(b)` have opposite signs so the algorithm can bracket the root.
+</Note>
+
+<Warning>
+  If `f′(a)` and `f′(b)` have the same sign, the Bisection method cannot find a root in `[a, b]`. The endpoint returns HTTP `422 Unprocessable Entity` in that case. Widen the interval or choose a different bracket.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/bisection/health`**
+
+Returns a liveness confirmation for the Bisection Optimization service.
+
+```bash
+curl https://api.example.com/api/v1/bisection/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "bisection-optimizer-api"
+}
+```

@@ -1,0 +1,228 @@
+---
+title: "POST /api/v1/simplex/solve — Linear Programming Solver"
+sidebarTitle: "Simplex Solve"
+description: "Solve linear programming problems with 2–5 variables via the Simplex method. Returns the optimal tableau, solution variables, and graphical data for 2-variable problems."
+---
+
+The `/api/v1/simplex/solve` endpoint accepts a linear objective function and a set of linear constraints, then applies the Simplex algorithm to find the optimal solution. Along with the final tableau the response includes a per-iteration snapshot of every pivot step, and — for 2-variable problems — a `graphical` payload ready for plotting.
+
+---
+
+## Request
+
+**`POST /api/v1/simplex/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="objective" type="list[float]" required>
+  Coefficients of the objective function, one per decision variable. Must contain between **2 and 5** elements. The number of elements determines the number of decision variables (`x1`, `x2`, …, `x5`).
+
+  Example: `[5, 4, 3]` represents `5x1 + 4x2 + 3x3`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="constraints" type="list[Constraint]" required>
+  At least one linear constraint. Every constraint must have the same number of coefficients as `objective`.
+
+  <Expandable title="Constraint object">
+    <ParamField body="coefficients" type="list[float]" required>
+      Left-hand-side coefficients, one per decision variable (2–5 elements, must match the length of `objective`).
+    </ParamField>
+
+    <ParamField body="inequality" type="string" required>
+      Relationship operator. One of `"<="`, `">="`, or `"="`.
+    </ParamField>
+
+    <ParamField body="rhs" type="float" required>
+      Right-hand-side constant of the constraint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns a `SimplexResponse` object.
+
+<ResponseField name="status" type="string">
+  Outcome of the solve. One of `"optimal"`, `"unbounded"`, or `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  The optimal value of the objective function. `null` when `status` is not `"optimal"`.
+</ResponseField>
+
+<ResponseField name="variables" type="object | null">
+  Map of variable names to their optimal values, e.g. `{"x1": 3.0, "x2": 2.5, "x3": 0.0}`. `null` when `status` is not `"optimal"`.
+</ResponseField>
+
+<ResponseField name="iterations" type="integer | null">
+  Total number of pivot iterations performed. `null` when `status` is not `"optimal"`.
+</ResponseField>
+
+<ResponseField name="tableau_headers" type="list[string] | null">
+  Column labels of the final simplex tableau (includes decision variables, slacks, and `"RHS"`). `null` when `status` is not `"optimal"`.
+</ResponseField>
+
+<ResponseField name="tableau_rows" type="list[TableauRow] | null">
+  Rows of the final simplex tableau. `null` when `status` is not `"optimal"`.
+
+  <Expandable title="TableauRow object">
+    <ResponseField name="basic_variable" type="string">
+      Name of the basic variable for this row (e.g. `"x1"`, `"s2"`).
+    </ResponseField>
+    <ResponseField name="values" type="list[float]">
+      Numeric values across all tableau columns in the same order as `tableau_headers`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string | null">
+  Human-readable status message describing the result.
+</ResponseField>
+
+<ResponseField name="graphical" type="GraphicalData | null">
+  Graphical representation of the feasible region. Only populated when the problem has exactly **2 decision variables**; otherwise `null`.
+
+  <Expandable title="GraphicalData object">
+    <ResponseField name="status" type="string">
+      Same as the top-level `status` field.
+    </ResponseField>
+    <ResponseField name="bounds" type="object">
+      Axis bounds for the plot: `x_min`, `x_max`, `y_min`, `y_max`.
+    </ResponseField>
+    <ResponseField name="constraints" type="list[GraphLine]">
+      Each constraint rendered as a line with `a`, `b`, `c` coefficients, sample `points`, a `label`, and the `inequality` type.
+    </ResponseField>
+    <ResponseField name="feasible_polygon" type="list[GraphPoint] | null">
+      Vertices of the feasible region polygon in `{x, y}` format, ordered for drawing. `null` when infeasible.
+    </ResponseField>
+    <ResponseField name="vertices" type="list[GraphPoint]">
+      All corner points of the feasible region evaluated during the graphical scan.
+    </ResponseField>
+    <ResponseField name="objective_line" type="GraphLine | null">
+      The objective function isoprofit/isocost line at the optimal value, formatted the same way as constraint lines.
+    </ResponseField>
+    <ResponseField name="optimal_point" type="object | null">
+      The optimal `{x, y}` point.
+    </ResponseField>
+    <ResponseField name="objective_value" type="float | null">
+      Optimal objective value echoed in the graphical payload.
+    </ResponseField>
+    <ResponseField name="goal" type="string">
+      `"max"` or `"min"` — echoes the request goal.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="iteration_tableaux" type="list[IterationTableau] | null">
+  Ordered list of tableau snapshots, one per pivot iteration.
+
+  <Expandable title="IterationTableau object">
+    <ResponseField name="iteration" type="integer">
+      1-based iteration number.
+    </ResponseField>
+    <ResponseField name="entering" type="string | null">
+      Name of the variable that entered the basis at this pivot step.
+    </ResponseField>
+    <ResponseField name="leaving" type="string | null">
+      Name of the variable that left the basis at this pivot step.
+    </ResponseField>
+    <ResponseField name="tableau_headers" type="list[string]">
+      Column labels at this iteration (identical to the final `tableau_headers`).
+    </ResponseField>
+    <ResponseField name="tableau_rows" type="list[TableauRow]">
+      Tableau rows at this iteration (same structure as the final `tableau_rows`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **5x1 + 4x2 + 3x3** subject to:
+- 6x1 + 4x2 + 2x3 ≤ 240
+- 3x1 + 2x2 + 5x3 ≤ 270
+- 5x1 + 6x2 + 5x3 ≤ 420
+
+```bash
+curl -X POST https://api.example.com/api/v1/simplex/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [5, 4, 3],
+    "goal": "max",
+    "constraints": [
+      {"coefficients": [6, 4, 2], "inequality": "<=", "rhs": 240},
+      {"coefficients": [3, 2, 5], "inequality": "<=", "rhs": 270},
+      {"coefficients": [5, 6, 5], "inequality": "<=", "rhs": 420}
+    ]
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 220.0,
+  "variables": {
+    "x1": 40.0,
+    "x2": 0.0,
+    "x3": 0.0
+  },
+  "iterations": 2,
+  "tableau_headers": ["x1", "x2", "x3", "s1", "s2", "s3", "RHS"],
+  "tableau_rows": [
+    {"basic_variable": "x1", "values": [1.0, 0.667, 0.333, 0.167, 0.0, 0.0, 40.0]},
+    {"basic_variable": "s2", "values": [0.0, 0.0, 4.0, -0.5, 1.0, 0.0, 150.0]},
+    {"basic_variable": "s3", "values": [0.0, 2.667, 3.333, -0.833, 0.0, 1.0, 220.0]}
+  ],
+  "message": "Optimal solution found",
+  "graphical": null,
+  "iteration_tableaux": [
+    {
+      "iteration": 1,
+      "entering": "x1",
+      "leaving": "s1",
+      "tableau_headers": ["x1", "x2", "x3", "s1", "s2", "s3", "RHS"],
+      "tableau_rows": [
+        {"basic_variable": "x1", "values": [1.0, 0.667, 0.333, 0.167, 0.0, 0.0, 40.0]},
+        {"basic_variable": "s2", "values": [0.0, 0.0, 4.0, -0.5, 1.0, 0.0, 150.0]},
+        {"basic_variable": "s3", "values": [0.0, 2.667, 3.333, -0.833, 0.0, 1.0, 220.0]}
+      ]
+    }
+  ]
+}
+```
+
+<Note>
+  When the problem has exactly 2 decision variables, the `graphical` field in the response is populated with line data, feasible polygon vertices, and the optimal point — useful for rendering a 2-D plot on the client side.
+</Note>
+
+<Warning>
+  All constraint `coefficients` arrays must have the **same length** as `objective`. Mismatched lengths return HTTP `422 Unprocessable Entity`.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/simplex/health`**
+
+Returns a simple liveness confirmation for the Simplex service.
+
+```bash
+curl https://api.example.com/api/v1/simplex/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "simplex-optimizer-api"
+}
+```

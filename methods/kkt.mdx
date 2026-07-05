@@ -1,0 +1,229 @@
+---
+title: "KKT Conditions for Constrained Nonlinear Optimization"
+sidebarTitle: "KKT"
+description: "Solve constrained nonlinear programs using Karush-Kuhn-Tucker conditions. Enumerates active constraint combinations, solves each KKT system, and returns the global optimum."
+---
+
+The **Karush-Kuhn-Tucker (KKT) conditions** are necessary optimality conditions for constrained nonlinear programs. For a minimization problem with inequality constraints `gᵢ(x) ≤ 0` and equality constraints `hⱼ(x) = 0`, any local optimum `x*` must satisfy:
+
+1. **Stationarity:** `∇f(x*) + Σ λᵢ ∇gᵢ(x*) + Σ μⱼ ∇hⱼ(x*) = 0`
+2. **Dual feasibility:** `λᵢ ≥ 0` for all inequality constraints
+3. **Primal feasibility:** `gᵢ(x*) ≤ 0` and `hⱼ(x*) = 0`
+4. **Complementary slackness:** `λᵢ · gᵢ(x*) = 0`
+
+The engine solves this by **enumerating all combinations of active inequality constraints**. For each subset `S` of inequality constraints treated as active (`gᵢ(x) = 0, i ∈ S`), it assembles a square KKT system and solves it with multivariate Newton's method. Candidates that violate dual feasibility (`λᵢ < 0`) or primal feasibility (an inactive constraint is violated) are discarded. The best valid candidate becomes the reported optimum.
+
+For maximization, the engine internally minimizes `−f` subject to the same constraints; the multipliers returned are directly the correct KKT multipliers for the original maximization problem.
+
+---
+
+## Endpoint
+
+```
+POST /api/v1/kkt/solve
+```
+
+---
+
+## Request
+
+<ParamField body="expression" type="string" required>
+  The objective function as a SymPy-compatible symbolic string. Use `**` for exponents and `*` for multiplication.
+
+  Examples: `"x**2 + y**2"`, `"x**2 + 2*y**2 - x*y"`
+</ParamField>
+
+<ParamField body="variables" type="string[]" required>
+  List of variable names in the expression. Must contain **2 or 3** names.
+
+  Example: `["x", "y"]`
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction: `"min"` or `"max"`.
+</ParamField>
+
+<ParamField body="constraints" type="KKTConstraint[]" required>
+  List of constraints. Must contain **1 to 5** entries.
+
+  <Expandable title="KKTConstraint fields">
+    <ParamField body="expression" type="string" required>
+      The left-hand side of the constraint as a symbolic string. The engine constructs `expression − rhs` internally.
+
+      Example: `"x + y"` (paired with `inequality: "<="` and `rhs: 4` gives `x + y ≤ 4`)
+    </ParamField>
+    <ParamField body="inequality" type="string" required>
+      Constraint type. One of:
+      - `"<="` — inequality constraint (introduces a λ multiplier)
+      - `">="` — inequality constraint, internally rewritten as `rhs − expression ≤ 0`
+      - `"="` — equality constraint (introduces a μ multiplier)
+    </ParamField>
+    <ParamField body="rhs" type="number" required>
+      Right-hand side constant of the constraint.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  `"optimal"` if at least one case satisfies all KKT conditions; `"infeasible"` if no valid case was found across all enumerated active-set combinations.
+</ResponseField>
+
+<ResponseField name="variables" type="string[]">
+  Echo of the variable names from the request.
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  The objective expression as parsed and simplified by SymPy.
+</ResponseField>
+
+<ResponseField name="goal" type="string">
+  Echo of the `goal` field from the request (`"min"` or `"max"`).
+</ResponseField>
+
+<ResponseField name="constraints_str" type="string[]">
+  Human-readable representation of each constraint as processed by the engine, e.g., `["x + y ≤ 4", "x ≥ 0"]`.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="number[] | null">
+  Coordinates of the global KKT optimum found, ordered to match `variables`. `null` when `status` is `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="number | null">
+  Objective function value at `optimal_point`.
+</ResponseField>
+
+<ResponseField name="optimal_case_id" type="number | null">
+  The `case_id` of the winning case. Use this to look up the full case detail (active constraints and multipliers) in the `cases` array.
+</ResponseField>
+
+<ResponseField name="cases" type="KKTCase[]">
+  Full record of every active-set combination tried. Includes both valid and discarded cases — useful for understanding why certain constraint combinations were rejected.
+
+  <Expandable title="KKTCase fields">
+    <ResponseField name="case_id" type="number">
+      Zero-based sequential index assigned to this combination.
+    </ResponseField>
+    <ResponseField name="active_indices" type="number[]">
+      Indices (0-based) of the inequality constraints treated as active in this case. An empty list means all inequality constraints were treated as inactive.
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Outcome for this case:
+      - `"valid"` — satisfies both primal and dual feasibility; eligible as the optimum
+      - `"dual_infeasible"` — at least one λᵢ < 0; discarded
+      - `"primal_infeasible"` — an inactive constraint is violated at the solution point; discarded
+      - `"no_convergence"` — Newton's method did not converge from any seed point
+    </ResponseField>
+    <ResponseField name="point" type="number[] | null">
+      Solution point found for this case. `null` for `"no_convergence"` cases.
+    </ResponseField>
+    <ResponseField name="lambdas" type="object | null">
+      Dictionary of inequality multipliers, keyed as `"λ1"`, `"λ2"`, etc., indexed over active constraints. `null` for `"no_convergence"` cases.
+    </ResponseField>
+    <ResponseField name="mus" type="object | null">
+      Dictionary of equality multipliers, keyed as `"μ1"`, `"μ2"`, etc. `null` for `"no_convergence"` cases or when there are no equality constraints.
+    </ResponseField>
+    <ResponseField name="objective_value" type="number | null">
+      Objective function value at `point`. `null` for `"no_convergence"` cases.
+    </ResponseField>
+    <ResponseField name="note" type="string">
+      Plain-text explanation of the case outcome, including which constraint caused a feasibility violation or which constraints were active.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cases_explored" type="number">
+  Total number of active-set combinations tried. For `m` inequality constraints, this equals `2^m` (all subsets). For example, 3 inequality constraints → 8 cases explored.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result, including the optimal point, objective value, and winning case ID.
+</ResponseField>
+
+---
+
+## Multiplier Conventions
+
+<Note>
+  `lambdas` (`λ`) are the **inequality constraint multipliers**. For a valid KKT point, all λᵢ must be non-negative (dual feasibility). They are keyed by their position among the active constraints in the enumerated subset, not by their original index in the `constraints` array.
+
+  `mus` (`μ`) are the **equality constraint multipliers**. They have no sign restriction and are indexed over the equality constraints in the order they appear in the request.
+</Note>
+
+---
+
+## Example
+
+Minimize `f(x, y) = x² + 2y² − x·y` subject to `x + y ≤ 4` and `x ≥ 0`:
+
+```bash
+curl -X POST https://api.example.com/api/v1/kkt/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + 2*y**2 - x*y",
+    "variables": ["x", "y"],
+    "goal": "min",
+    "constraints": [
+      { "expression": "x + y", "inequality": "<=", "rhs": 4 },
+      { "expression": "x",     "inequality": ">=", "rhs": 0 }
+    ]
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "status": "optimal",
+  "variables": ["x", "y"],
+  "function_str": "x**2 - x*y + 2*y**2",
+  "goal": "min",
+  "constraints_str": ["x + y ≤ 4", "x ≥ 0"],
+  "optimal_point": [0.0, 0.0],
+  "optimal_value": 0.0,
+  "optimal_case_id": 0,
+  "cases": [
+    {
+      "case_id": 0,
+      "active_indices": [],
+      "status": "valid",
+      "point": [0.0, 0.0],
+      "lambdas": {},
+      "mus": {},
+      "objective_value": 0.0,
+      "note": "Caso válido (restricciones activas: ninguna)."
+    },
+    {
+      "case_id": 1,
+      "active_indices": [0],
+      "status": "dual_infeasible",
+      "point": [1.333, 2.667],
+      "lambdas": { "λ1": -0.4444 },
+      "mus": {},
+      "objective_value": 5.333,
+      "note": "Descartado: λ1 = -0.4444 < 0 (debe ser ≥ 0)."
+    }
+  ],
+  "cases_explored": 4,
+  "message": "Punto óptimo KKT en (x = 0, y = 0) con f = 0 (caso #0)."
+}
+```
+
+---
+
+## Algorithm Notes
+
+<Tip>
+  The number of cases explored grows as `2^m`, where `m` is the number of **inequality** constraints. With the maximum of 5 constraints, up to 32 cases are explored. Equality constraints (`"="`) do not create additional cases — they are always treated as active.
+</Tip>
+
+<Note>
+  `cases_explored` counts every active-set combination attempted, including cases that failed to converge. Inspecting the `cases` array lets you trace exactly which combinations were tried, why each was accepted or rejected, and what multiplier values were found.
+</Note>
+
+<Warning>
+  KKT conditions are **necessary** but not sufficient for a global optimum in non-convex problems. If the feasible region is non-convex or the objective has multiple local optima, the engine returns the best valid KKT point found, which may be a local rather than global optimum.
+</Warning>

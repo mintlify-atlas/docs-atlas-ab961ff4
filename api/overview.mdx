@@ -1,0 +1,107 @@
+---
+title: "Simplex Optimizer REST API Overview"
+sidebarTitle: "Overview"
+description: "The Simplex Optimizer REST API provides nine solver endpoints under /api/v1. No authentication required. All endpoints accept and return JSON."
+---
+
+The Simplex Optimizer backend is a FastAPI application that exposes seven solver groups—covering linear programming, binary and pure integer programming, single-variable optimization, multivariable gradient descent, and constrained nonlinear programming via KKT—through a single REST API. Every route follows the same conventions: POST to a `/solve` endpoint with a JSON body, GET a `/health` endpoint to verify liveness, and read back a structured JSON response. There is no authentication layer; the API is open by design for local and classroom use.
+
+## Base URL
+
+| Environment | URL |
+|-------------|-----|
+| Development | `http://localhost:8000` |
+| Production  | Your deployed backend URL |
+
+All endpoints are prefixed with `/api/v1/`.
+
+## Authentication
+
+No authentication is required. The API is open—send requests directly without any token, API key, or session cookie.
+
+## Content Type
+
+All `POST` requests must include the header:
+
+```http
+Content-Type: application/json
+```
+
+## Endpoints
+
+The table below lists all 14 endpoints exposed by the API.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/simplex/solve` | Solve a linear programme via the Big-M Simplex method |
+| `GET`  | `/api/v1/simplex/health` | Health check for the simplex service |
+| `POST` | `/api/v1/binary/solve` | Solve a binary integer programme via Branch & Bound |
+| `GET`  | `/api/v1/binary/health` | Health check for the binary service |
+| `POST` | `/api/v1/integer/solve` | Solve a pure integer programme via Branch & Bound |
+| `GET`  | `/api/v1/integer/health` | Health check for the integer service |
+| `POST` | `/api/v1/bisection/solve` | Optimize a single-variable polynomial via bisection on f′(x) |
+| `GET`  | `/api/v1/bisection/health` | Health check for the bisection service |
+| `POST` | `/api/v1/newton/solve` | Optimize a single-variable polynomial via Newton-Raphson |
+| `GET`  | `/api/v1/newton/health` | Health check for the Newton service |
+| `POST` | `/api/v1/gradient/solve` | Optimize a multivariable function via gradient descent/ascent |
+| `POST` | `/api/v1/gradient/graphical` | Compute surface or volume grid data for a multivariable function |
+| `GET`  | `/api/v1/gradient/health` | Health check for the gradient service |
+| `POST` | `/api/v1/kkt/solve` | Solve a constrained NLP via Karush-Kuhn-Tucker conditions |
+| `GET`  | `/api/v1/kkt/health` | Health check for the KKT service |
+
+## Error Responses
+
+Validation errors are handled by Pydantic v2 and FastAPI and return an HTTP `422 Unprocessable Entity` with a structured `detail` array. Each item in the array identifies the location of the invalid field (`loc`), a human-readable message (`msg`), and an error type string (`type`).
+
+```json
+{
+  "detail": [
+    {
+      "type": "too_short",
+      "loc": ["body", "objective"],
+      "msg": "List should have at least 2 items after validation, not 1",
+      "input": [3.0],
+      "ctx": { "field_type": "List", "min_length": 2, "actual_length": 1 }
+    }
+  ]
+}
+```
+
+<Note>
+  All solver endpoints also raise `422` for domain-level errors—for example, when constraint coefficient lengths do not match the objective function length. The `detail` field will contain a plain string in that case rather than the structured Pydantic array.
+</Note>
+
+## Interactive Documentation
+
+FastAPI automatically generates two interactive API explorers from the OpenAPI schema:
+
+- **Swagger UI** — [http://localhost:8000/docs](http://localhost:8000/docs)  
+  Test requests directly from the browser with a full form-based interface.
+- **ReDoc** — [http://localhost:8000/redoc](http://localhost:8000/redoc)  
+  A read-friendly reference layout with schema details and examples.
+
+## Endpoint Groups
+
+<CardGroup cols={2}>
+  <Card title="Simplex (LP)" icon="table" href="/api/endpoints/simplex">
+    Solve linear programmes with 2–5 variables using the Big-M Simplex method. Includes graphical output for two-variable problems.
+  </Card>
+  <Card title="Binary Integer" icon="binary" href="/api/endpoints/binary">
+    Solve binary (0/1) integer programmes via Branch & Bound, with a full enumeration tree returned in the response.
+  </Card>
+  <Card title="Pure Integer" icon="hashtag" href="/api/endpoints/integer">
+    Solve pure integer programmes via Branch & Bound with variable-specific lower and upper bound branching.
+  </Card>
+  <Card title="Bisection" icon="scissors" href="/api/endpoints/bisection">
+    Find optima of single-variable polynomials by applying bisection to the first derivative f′(x).
+  </Card>
+  <Card title="Newton-Raphson" icon="chart-line" href="/api/endpoints/newton">
+    Find optima of single-variable polynomials using second-order Newton-Raphson iteration on f′(x).
+  </Card>
+  <Card title="Gradient Descent" icon="arrow-trend-down" href="/api/endpoints/gradient">
+    Optimize symbolic multivariable functions (2–3 variables) via gradient descent or ascent, with optional graphical surface data.
+  </Card>
+  <Card title="KKT" icon="circle-nodes" href="/api/endpoints/kkt">
+    Solve constrained nonlinear programmes by enumerating active-constraint combinations and applying KKT conditions via multivariable Newton.
+  </Card>
+</CardGroup>

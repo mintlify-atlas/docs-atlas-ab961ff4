@@ -1,0 +1,91 @@
+---
+title: "Simplex Optimizer Architecture Overview"
+sidebarTitle: "Overview"
+description: "How the FastAPI backend, React frontend, and optimization engines fit together in the Simplex Optimizer monorepo."
+---
+
+The Simplex Optimizer is a full-stack monorepo that pairs a **Python 3.11 + FastAPI** backend with a **React 18 + TypeScript + Vite** frontend. The backend exposes a versioned REST API at `/api/v1`, housing seven solver routers and nine engine classes that handle everything from classic Big-M simplex to Branch & Bound, bisection, gradient descent, and Karush-Kuhn-Tucker conditions. The frontend consumes those endpoints through a thin service layer and renders results — tableaux, graphical feasible regions, B&B trees, and 3-D surfaces — using an atomic component hierarchy that scales from individual `Button` atoms up to full solver pages.
+
+## Monorepo structure
+
+The repository is split into two top-level directories. The `backend/` tree contains the FastAPI application, all engine classes, Pydantic v2 schemas, and a `requirements.txt` that pins every dependency to an exact version. The `frontend/` tree contains the React application, atomic design component hierarchy, hooks, service modules, and shared TypeScript types.
+
+```
+simplex-optimizer/
+├── frontend/                        # React 18 + TypeScript + Vite
+│   └── src/
+│       ├── components/
+│       │   ├── atoms/               # Button, Input, Select, Badge, Label, Spinner
+│       │   ├── molecules/           # TabGroup, ObjectiveRow, ConstraintRow,
+│       │   │                        # MetricCard, ErrorBanner, TableauTable
+│       │   ├── organisms/           # AppHeader, ObjectiveForm,
+│       │   │                        # ConstraintsForm, SolutionDisplay
+│       │   ├── templates/           # SolverTemplate  (pure layout)
+│       │   └── pages/               # SolverPage, BinaryPage, IntegerPage,
+│       │                            # BisectionPage, MultivarPage, KKTPage
+│       ├── hooks/                   # useSimplex, useBinary, useInteger, …
+│       ├── services/                # simplexApi.ts, binaryApi.ts, …
+│       └── types/                   # simplex.ts (shared TS interfaces)
+│
+└── backend/                         # Python 3.11 + FastAPI + NumPy
+    └── app/
+        ├── api/
+        │   └── routes/              # simplex.py, binary.py, integer.py,
+        │                            # bisection.py, newton.py, gradient.py, kkt.py
+        ├── core/                    # simplex_engine.py, binary_engine.py, …
+        └── models/
+            └── schemas.py           # Pydantic v2 request / response models
+```
+
+## Data flow
+
+Every user interaction follows the same end-to-end path, from form input through the engine and back to the display layer.
+
+<Steps>
+  <Step title="User fills the form">
+    A React page component (e.g. `SolverPage`) renders an `ObjectiveForm` and `ConstraintsForm` organism, collecting coefficients, the optimization goal (`max`/`min`), and constraint rows.
+  </Step>
+  <Step title="Hook manages state and dispatch">
+    Submitting the form calls `solve()` from the relevant hook (e.g. `useSimplex`). The hook sets `loading: true`, builds the typed request payload from form state, and delegates to the service layer.
+  </Step>
+  <Step title="Service makes the HTTP call">
+    The service module (e.g. `simplexApi.ts`) calls `fetch` against `VITE_API_URL/simplex/solve` with `Content-Type: application/json`. Non-2xx responses are converted into a typed `ApiError`.
+  </Step>
+  <Step title="FastAPI route validates and dispatches">
+    The matching router validates the request body against its Pydantic v2 schema, instantiates the engine class with the parsed parameters, and calls `.solve()`.
+  </Step>
+  <Step title="Engine computes the solution">
+    The engine (e.g. `SimplexEngine`) builds the tableau internally using NumPy, iterates the Big-M pivot algorithm, and returns a `SimplexResult` dataclass containing the status, objective value, variable assignments, tableau rows, and per-iteration snapshots.
+  </Step>
+  <Step title="Pydantic serializes the response">
+    The route handler converts the dataclass into the appropriate Pydantic response model (e.g. `SimplexResponse`), which FastAPI serializes to JSON automatically.
+  </Step>
+  <Step title="Frontend renders the result">
+    The hook stores the response in React state. Downstream components — `SolutionDisplay`, `TableauTable`, `GraphicalPlot` — read that state and render the solution, including Plotly.js charts where applicable.
+  </Step>
+</Steps>
+
+## Solver modules
+
+The application covers six distinct optimization methods, each with its own route, engine, schema, service, and hook.
+
+| Method | Route prefix | Variables | Description |
+|---|---|---|---|
+| Big-M Simplex | `/simplex` | 2 – 5 | LP maximization and minimization |
+| Binary B&B | `/binary` | 2 – 5 | 0/1 integer programming via Branch & Bound |
+| Pure Integer B&B | `/integer` | 2 – 5 | General integer programming |
+| Bisection | `/bisection` | 1 | Single-variable unconstrained optimization |
+| Newton-Raphson | `/newton` | 1 | Newton's method for unconstrained optimization |
+| Gradient descent | `/gradient` | 2 – 3 | Multi-variable gradient method + graphical output |
+| KKT | `/kkt` | 2 – 3 | Karush-Kuhn-Tucker conditions for constrained NLP |
+
+## Detail pages
+
+<CardGroup cols={2}>
+  <Card title="Backend Architecture" icon="server" href="/architecture/backend">
+    FastAPI app setup, seven router modules, engine class patterns, Pydantic v2 schemas, CORS configuration, and auto-generated API docs.
+  </Card>
+  <Card title="Frontend Architecture" icon="browser" href="/architecture/frontend">
+    React 18 atomic design layers, hooks, service modules, TypeScript types, Plotly.js integration, and Vite build tooling.
+  </Card>
+</CardGroup>

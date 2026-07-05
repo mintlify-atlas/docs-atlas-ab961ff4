@@ -1,0 +1,209 @@
+---
+title: "Deploy Simplex Optimizer to Production"
+sidebarTitle: "Production"
+description: "Deploy the FastAPI backend to a Procfile-compatible host and the React frontend as a static site, with environment variable and CORS configuration."
+---
+
+Simplex Optimizer is designed with a clean separation between its FastAPI backend and its React frontend, making each piece independently deployable. The backend ships with a `Procfile` that is compatible with any Procfile-aware platform (Heroku, Railway, Render), and the frontend is a standard Vite static build that can be served from GitHub Pages, Netlify, or Vercel. This page walks through configuring and deploying both layers for a production environment.
+
+---
+
+## Backend Deployment
+
+### Procfile
+
+The `backend/Procfile` tells the hosting platform how to start the web process:
+
+```procfile
+web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+The `$PORT` variable is injected automatically by platforms such as Heroku, Railway, and Render — you do not need to set it manually.
+
+<Steps>
+  <Step title="Push your code to a Git remote">
+    Make sure your latest backend changes are committed and pushed to the branch your hosting platform tracks (typically `main` or `master`).
+
+    ```bash
+    git add .
+    git commit -m "chore: prepare for production deployment"
+    git push origin main
+    ```
+  </Step>
+
+  <Step title="Create a new web service on your platform">
+    Point the platform at the repository and set the **root directory** to `backend/`. Most Procfile-compatible hosts will detect the `Procfile` automatically and use the `web` process type.
+  </Step>
+
+  <Step title="Set backend environment variables">
+    Add the following variables in your platform's dashboard or CLI:
+
+    | Variable | Production value | Description |
+    |----------|-----------------|-------------|
+    | `APP_HOST` | `0.0.0.0` | Bind interface (leave as-is) |
+    | `APP_PORT` | Managed by platform via `$PORT` | Do not override |
+    | `APP_RELOAD` | `false` | Disable auto-reload in production |
+    | `CORS_ORIGINS` | Your deployed frontend URL(s), comma-separated | Restricts which origins can call the API |
+  </Step>
+
+  <Step title="Deploy and verify">
+    Trigger a deploy. Once the service is live, confirm the API root responds:
+
+    ```bash
+    curl https://your-backend-domain.example.com/
+    # {"message":"Optimización Simplex API","docs":"/docs"}
+    ```
+  </Step>
+</Steps>
+
+---
+
+## CORS Configuration
+
+The `allow_origins` list in `backend/app/main.py` controls which browser origins are allowed to make cross-origin requests to the API. The current configuration is:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://fabianelov.github.io",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+<Warning>
+  Before going live, add your production frontend URL to the `allow_origins` list. Browsers will block all API calls from any origin not explicitly listed here. If you are deploying to a custom domain (e.g., `https://app.yoursite.com`), add that URL alongside the existing entries.
+</Warning>
+
+<Note>
+  The existing entry `https://fabianelov.github.io` covers the GitHub Pages deployment of this project. If you fork the repository and host under a different GitHub username or custom domain, update this value accordingly.
+</Note>
+
+---
+
+## Frontend Deployment
+
+The frontend is a Vite-powered React app. A production build produces a fully static `dist/` directory that can be served by any static hosting provider.
+
+### Build
+
+<Steps>
+  <Step title="Set the production API URL">
+    Create or update `frontend/.env` (or set the variable in your CI/CD environment) so `VITE_API_URL` points to your deployed backend:
+
+    ```env
+    # URL del backend FastAPI (sin barra final)
+    VITE_API_URL=https://your-backend-domain.example.com/api/v1
+    ```
+
+    <Warning>
+      Never leave `VITE_API_URL` pointing at `localhost` in a production build. Vite inlines environment variables at build time, so a misconfigured value will be baked into the static assets.
+    </Warning>
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    cd frontend
+    npm install
+    ```
+  </Step>
+
+  <Step title="Build the static site">
+    ```bash
+    npm run build -- --emptyOutDir
+    ```
+
+    Output is written to `frontend/dist/`. The `vite.config.ts` sets `base: "/Metodo-simplex/"`, so all asset paths are prefixed with that sub-path — matching the GitHub Pages repository URL structure.
+  </Step>
+
+  <Step title="Deploy the dist/ directory">
+    Upload or deploy the contents of `frontend/dist/` to your chosen static host:
+
+    - **GitHub Pages** — see the automated workflow below.
+    - **Netlify** — drag-and-drop `dist/` in the Netlify UI, or connect the repository and set the build command to `npm run build` with publish directory `frontend/dist`.
+    - **Vercel** — import the repository, set the root directory to `frontend`, and Vercel will detect Vite automatically.
+  </Step>
+</Steps>
+
+---
+
+## Automated GitHub Pages Deployment
+
+The repository includes a GitHub Actions workflow at `.github/workflows/frontend.yml` that automatically builds and publishes the frontend to GitHub Pages on every push to `master` that touches the `frontend/` directory.
+
+```yaml
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "frontend/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build -- --emptyOutDir
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: frontend/dist
+```
+
+<Note>
+  The workflow reads `VITE_API_URL` from **GitHub Actions Secrets**, not from a committed `.env` file. Before the first deploy, go to **Settings → Secrets and variables → Actions** in your repository and add a secret named `VITE_API_URL` with the full production backend URL (e.g., `https://your-backend-domain.example.com/api/v1`).
+</Note>
+
+---
+
+## Production Environment Variables Summary
+
+### Backend
+
+| Variable | Recommended production value | Description |
+|----------|------------------------------|-------------|
+| `APP_HOST` | `0.0.0.0` | Bind all interfaces |
+| `APP_RELOAD` | `false` | Disable hot-reload |
+| `CORS_ORIGINS` | Comma-separated list of your frontend URLs | Restricts CORS to known origins |
+
+### Frontend
+
+| Variable | Source in CI | Description |
+|----------|-------------|-------------|
+| `VITE_API_URL` | `secrets.VITE_API_URL` | Full base URL of the deployed backend API (no trailing slash) |
+
+---
+
+## HTTPS in Production
+
+<Warning>
+  The backend **must** be served behind an HTTPS-terminating reverse proxy (or a platform that provides HTTPS automatically) before going live. Modern browsers block mixed-content requests — if your frontend is served over HTTPS but the backend URL in `VITE_API_URL` is plain HTTP, all API calls will be silently blocked. Platforms like Heroku, Railway, and Render provision TLS certificates automatically; if you self-host, configure nginx or Caddy as a TLS proxy in front of Uvicorn.
+</Warning>

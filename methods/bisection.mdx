@@ -1,0 +1,193 @@
+---
+title: "Bisection Method for Single-Variable Optimization"
+sidebarTitle: "Bisection"
+description: "Optimize a polynomial function of one variable by applying bisection to its derivative f′(x). Specify polynomial coefficients, interval, tolerance, and goal."
+---
+
+The Bisection method finds an optimal point of a single-variable polynomial by locating a root of its first derivative f′(x) = 0 within a user-supplied interval \[a, b\]. At each iteration the interval is halved: the midpoint m = (a + b) / 2 is evaluated, and the sub-interval whose endpoints bracket the zero-crossing of f′ is retained. Iteration continues until f′(m) falls within the requested tolerance or the interval width itself becomes negligibly small. Once the stationary point x\* is found, the sign of f″(x\*) determines whether it is a minimum, maximum, or saddle/inflection point.
+
+## Polynomial Representation
+
+The function is modelled as a polynomial of arbitrary degree. Coefficients are supplied from **highest to lowest degree**, following NumPy convention:
+
+```
+coefficients = [c_n, c_{n-1}, ..., c_1, c_0]
+f(x) = c_n·xⁿ + c_{n-1}·xⁿ⁻¹ + ... + c_1·x + c_0
+```
+
+**Examples:**
+
+| `coefficients`     | f(x)              |
+| ------------------ | ----------------- |
+| `[-1, 4, 0]`       | −x² + 4x          |
+| `[1, -3, 2]`       | x² − 3x + 2       |
+| `[1, 0, -4, 0, 3]` | x⁴ − 4x² + 3      |
+
+The engine computes f′(x) and f″(x) analytically using NumPy's `polyder` function.
+
+<Note>
+  f′(a) and f′(b) must have **opposite signs** for bisection to guarantee a stationary point inside \[a, b\]. If they share the same sign the endpoint returns a 422 error — adjust the interval so that the derivative changes sign within it.
+</Note>
+
+---
+
+## Endpoint
+
+```
+POST /bisection/solve
+```
+
+---
+
+## Request
+
+<ParamField body="coefficients" type="float[]" required>
+  Polynomial coefficients listed from highest to lowest degree. Must contain between 1 and 11 elements; the list must not be all zeros.
+
+  **Example:** `[-1, 4, 0]` encodes f(x) = −x² + 4x.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction: `"max"` to find a maximum or `"min"` to find a minimum. The engine uses f″(x\*) to classify the stationary point and reports whether it matches the requested goal.
+</ParamField>
+
+<ParamField body="a" type="float" required>
+  Left endpoint of the search interval. Must satisfy `a < b`.
+</ParamField>
+
+<ParamField body="b" type="float" required>
+  Right endpoint of the search interval. Must satisfy `b > a`.
+</ParamField>
+
+<ParamField body="tolerance" type="float" default="1e-6">
+  Convergence threshold. Iteration stops when |f′(midpoint)| \< tolerance **or** the interval half-width \< tolerance. Must be in the range (0, 1].
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="100">
+  Maximum number of bisection steps. Must be between 1 and 500. The solver halts at this limit even if tolerance has not been reached.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  Always `"optimal"` when the solver completes without error. Error conditions are returned as HTTP 422 responses.
+</ResponseField>
+
+<ResponseField name="optimal_x" type="float | null">
+  The x-coordinate of the stationary point found by bisection.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  The function value f(optimal_x) at the stationary point.
+</ResponseField>
+
+<ResponseField name="nature" type="string | null">
+  Classification of the stationary point based on f″(x\*):
+  - `"mínimo"` — local minimum (f″ > 0).
+  - `"máximo"` — local maximum (f″ < 0).
+  - `"punto de inflexión"` — saddle or inflection point (f″ ≈ 0).
+</ResponseField>
+
+<ResponseField name="goal_satisfied" type="boolean">
+  `true` when the `nature` of the found point matches the requested `goal`. For example, `goal = "max"` with `nature = "máximo"` yields `true`.
+</ResponseField>
+
+<ResponseField name="iterations_count" type="integer">
+  Total number of bisection iterations executed before convergence.
+</ResponseField>
+
+<ResponseField name="iterations" type="BisectionIteration[]">
+  Step-by-step trace of the bisection process, one entry per iteration.
+
+  <Expandable title="BisectionIteration fields">
+    <ResponseField name="iteration" type="integer">
+      One-based iteration counter.
+    </ResponseField>
+
+    <ResponseField name="a" type="float">
+      Left endpoint of the active interval at the start of this iteration.
+    </ResponseField>
+
+    <ResponseField name="b" type="float">
+      Right endpoint of the active interval at the start of this iteration.
+    </ResponseField>
+
+    <ResponseField name="midpoint" type="float">
+      Midpoint m = (a + b) / 2 evaluated in this iteration.
+    </ResponseField>
+
+    <ResponseField name="f_mid" type="float">
+      Function value f(midpoint) — used to plot the convergence curve in the frontend.
+    </ResponseField>
+
+    <ResponseField name="df_mid" type="float">
+      Derivative value f′(midpoint) — the bisection criterion; the search ends when |df_mid| \< tolerance.
+    </ResponseField>
+
+    <ResponseField name="interval_width" type="float">
+      Half-width of the current interval: (b − a) / 2. Decreases by half each iteration.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable string representation of f(x), e.g. `"-x² + 4x"`.
+</ResponseField>
+
+<ResponseField name="derivative_str" type="string">
+  Human-readable string representation of f′(x), e.g. `"-2x + 4"`.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Narrative summary of the result, including the stationary point's nature and whether the goal was satisfied. Also warns when a saddle/inflection point was found.
+</ResponseField>
+
+---
+
+## Example
+
+Find the **maximum** of f(x) = −x² + 4x on \[0, 4\]:
+
+```bash
+curl -X POST http://localhost:8000/bisection/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coefficients": [-1, 4, 0],
+    "goal": "max",
+    "a": 0,
+    "b": 4,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "optimal_x": 2.0,
+  "optimal_value": 4.0,
+  "nature": "máximo",
+  "goal_satisfied": true,
+  "iterations_count": 22,
+  "iterations": [
+    {
+      "iteration": 1,
+      "a": 0.0,
+      "b": 4.0,
+      "midpoint": 2.0,
+      "f_mid": 4.0,
+      "df_mid": 0.0,
+      "interval_width": 2.0
+    }
+  ],
+  "function_str": "-x² + 4x",
+  "derivative_str": "-2x + 4",
+  "message": "Óptimo encontrado: el punto x = 2 es un máximo de la función, coincidiendo con la meta solicitada (máximo)."
+}
+```
+
+<Note>
+  When `goal_satisfied` is `false`, the solver still converges to the nearest stationary point — it simply doesn't match the requested direction. This happens, for example, when the only stationary point inside \[a, b\] is a minimum but `goal = "max"` was requested. Check the interval bounds or switch the goal.
+</Note>

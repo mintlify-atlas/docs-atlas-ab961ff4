@@ -1,0 +1,82 @@
+---
+title: "Simplex Optimizer: Multi-Method Optimization Platform"
+sidebarTitle: "Introduction"
+description: "Simplex Optimizer provides nine optimization algorithms — from LP Simplex to KKT conditions — via a REST API and an interactive React frontend with visual output."
+---
+
+Simplex Optimizer is a full-stack mathematical optimization platform that gives engineers, researchers, and students a single, consistent interface for solving a wide class of optimization problems — linear, integer, nonlinear, and constrained. A FastAPI backend exposes every algorithm as a versioned REST endpoint, while a React 18 frontend lets you build and solve problems interactively and inspect results through dynamic tables and Plotly charts, all without writing a line of code.
+
+## What Is Simplex Optimizer?
+
+The project is organized as a monorepo with two independent services that talk over HTTP:
+
+- **Backend** — a Python 3.11 + FastAPI application that hosts the optimization engines, validates input with Pydantic v2, and returns structured JSON responses including iteration tableaux, variable values, and optional graphical data. Symbolic math is handled by SymPy; numerical operations use NumPy.
+- **Frontend** — a React 18 + TypeScript single-page application built with Vite. It follows an atomic-design component hierarchy (atoms → molecules → organisms → templates → pages) and renders charts via Plotly.js.
+
+Both services are independently runnable and communicate through a configurable base URL (`VITE_API_URL`), making it straightforward to deploy the backend on a server while hosting the frontend statically.
+
+## Nine Optimization Methods
+
+Simplex Optimizer ships nine solvers, each available as its own REST endpoint under `/api/v1`:
+
+<CardGroup cols={2}>
+  <Card title="Simplex (Big-M)" icon="table-columns">
+    Solves bounded LP problems via the Big-M method. Supports maximization and minimization with `<=`, `>=`, and `=` constraints. Returns the full pivot tableau at every iteration.
+  </Card>
+  <Card title="Graphical LP" icon="chart-scatter">
+    Plots the feasible region and objective function for two-variable LP problems. Ideal for visualizing corner-point solutions on a 2D plane.
+  </Card>
+  <Card title="Binary Integer (B&B)" icon="binary">
+    Branch-and-bound solver for binary integer programming problems, where decision variables are restricted to 0 or 1.
+  </Card>
+  <Card title="Pure Integer (B&B)" icon="hashtag">
+    Branch-and-bound solver for pure integer programming problems with general non-negative integer decision variables.
+  </Card>
+  <Card title="Bisection" icon="arrows-split-up-and-left">
+    Root-finding via the bisection method for single-variable nonlinear equations. Returns the convergence table for each iteration.
+  </Card>
+  <Card title="Newton-Raphson" icon="arrow-trend-down">
+    Iterative root-finding and optimization using first- and second-order derivative information for fast quadratic convergence.
+  </Card>
+  <Card title="Gradient Descent" icon="gradient">
+    Symbolic gradient-based optimizer for multivariate functions. Accepts a SymPy-compatible expression, an initial point, and a step size; supports both descent and ascent.
+  </Card>
+  <Card title="Graphical Multivar" icon="cube">
+    Generates 3D surface and volume data for two- or three-variable objective functions, enabling visual exploration of the optimization landscape.
+  </Card>
+  <Card title="KKT Conditions" icon="equals">
+    Solves constrained nonlinear optimization problems analytically using Karush-Kuhn-Tucker optimality conditions via symbolic computation.
+  </Card>
+</CardGroup>
+
+## Technical Stack
+
+| Layer | Technology |
+|---|---|
+| Language (backend) | Python 3.11 |
+| API framework | FastAPI 0.115 |
+| Numerical computing | NumPy 2.1 |
+| Symbolic math | SymPy 1.13 |
+| Data validation | Pydantic 2.9 |
+| ASGI server | Uvicorn 0.30 |
+| Language (frontend) | TypeScript 5.5 |
+| UI framework | React 18.3 |
+| Build tool | Vite 5.4 |
+| Charting | Plotly.js / react-plotly.js |
+
+## Explore the Docs
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run the backend and frontend locally in under five minutes and make your first API call.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Full endpoint documentation for all nine solvers, generated from the live OpenAPI schema.
+  </Card>
+  <Card title="Methods" icon="function" href="/methods">
+    Deep-dive explanations of the algorithms, input schemas, and example requests for each solver.
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Component diagram, data-flow overview, atomic design structure, and deployment options.
+  </Card>
+</CardGroup>

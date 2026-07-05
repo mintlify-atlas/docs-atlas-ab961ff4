@@ -1,0 +1,192 @@
+---
+title: "POST /api/v1/newton/solve — Newton-Raphson Optimization"
+sidebarTitle: "Newton Solve"
+description: "Optimize a single-variable polynomial using Newton-Raphson on f′(x). Requires an initial guess x₀ and converges quadratically to the nearest critical point."
+---
+
+The `/api/v1/newton/solve` endpoint finds the optimum of a single-variable polynomial by applying the **Newton-Raphson method** to the first derivative `f′(x)`. Starting from an initial guess `x₀`, each iteration refines the estimate using `xₙ₊₁ = xₙ − f′(xₙ) / f″(xₙ)` until convergence. The nature of the located critical point is verified using the second derivative `f″(x)`.
+
+Compared to the Bisection method, Newton-Raphson typically converges much faster (quadratically) but requires a good initial guess and a non-zero second derivative at the solution.
+
+---
+
+## Request
+
+**`POST /api/v1/newton/solve`**
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="coefficients" type="list[float]" required>
+  Polynomial coefficients listed from **highest to lowest degree**. Must contain between **1 and 11** elements (degree 0 through 10). The array must not be all-zero.
+
+  Examples:
+  - `[-1, 4, 0]` → `-x² + 4x`
+  - `[1, -6, 9, 0]` → `x³ - 6x² + 9x`
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="x0" type="float" required>
+  Initial guess for the location of the critical point. The algorithm converges to the nearest root of `f′(x)` from this starting value.
+</ParamField>
+
+<ParamField body="tolerance" type="float" default="1e-6">
+  Convergence tolerance on the step size `|xₙ₊₁ − xₙ|`. Must be greater than `0` and at most `1.0`.
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="100">
+  Maximum number of Newton-Raphson steps. Accepted range: **1–500**.
+</ParamField>
+
+---
+
+## Response
+
+A successful call returns a `NewtonResponse` object.
+
+<ResponseField name="status" type="string">
+  Outcome of the solve. One of:
+  - `"optimal"` — a critical point was found within `tolerance`.
+  - `"no_convergence"` — `max_iterations` was reached without satisfying the tolerance.
+</ResponseField>
+
+<ResponseField name="optimal_x" type="float | null">
+  The x-coordinate of the located critical point. `null` if the method did not converge.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  The function value `f(optimal_x)`. `null` if the method did not converge.
+</ResponseField>
+
+<ResponseField name="nature" type="string | null">
+  Classification of the critical point: `"maximum"`, `"minimum"`, or `"inflection point"`. `null` if the method did not converge.
+</ResponseField>
+
+<ResponseField name="goal_satisfied" type="boolean">
+  `true` when the `nature` of the found point matches the requested `goal`.
+</ResponseField>
+
+<ResponseField name="iterations_count" type="integer">
+  Actual number of Newton-Raphson iterations performed.
+</ResponseField>
+
+<ResponseField name="iterations" type="list[NewtonIteration]">
+  Step-by-step iteration table, one entry per Newton-Raphson step.
+
+  <Expandable title="NewtonIteration object">
+    <ResponseField name="iteration" type="integer">
+      1-based iteration number.
+    </ResponseField>
+    <ResponseField name="x_n" type="float">
+      Current estimate `xₙ` at the start of this iteration.
+    </ResponseField>
+    <ResponseField name="f_xn" type="float">
+      Function value `f(xₙ)`.
+    </ResponseField>
+    <ResponseField name="df_xn" type="float">
+      First derivative value `f′(xₙ)`.
+    </ResponseField>
+    <ResponseField name="d2f_xn" type="float">
+      Second derivative value `f″(xₙ)`, used as the divisor in the Newton step.
+    </ResponseField>
+    <ResponseField name="x_next" type="float">
+      Updated estimate `xₙ₊₁ = xₙ − f′(xₙ) / f″(xₙ)`.
+    </ResponseField>
+    <ResponseField name="step" type="float">
+      Magnitude of the update `|xₙ₊₁ − xₙ|`; compared against `tolerance` to test convergence.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable string representation of `f(x)` (e.g. `"-x**2 + 4*x"`).
+</ResponseField>
+
+<ResponseField name="derivative_str" type="string">
+  Human-readable string representation of `f′(x)` (e.g. `"-2*x + 4"`).
+</ResponseField>
+
+<ResponseField name="second_derivative_str" type="string">
+  Human-readable string representation of `f″(x)` (e.g. `"-2"`).
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result.
+</ResponseField>
+
+---
+
+## Example
+
+Maximize **f(x) = −x² + 4x** starting from `x₀ = 0`.
+
+Coefficients from highest to lowest degree: `[-1, 4, 0]`.
+
+```bash
+curl -X POST https://api.example.com/api/v1/newton/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coefficients": [-1, 4, 0],
+    "goal": "max",
+    "x0": 0,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "optimal_x": 2.0,
+  "optimal_value": 4.0,
+  "nature": "maximum",
+  "goal_satisfied": true,
+  "iterations_count": 1,
+  "iterations": [
+    {
+      "iteration": 1,
+      "x_n": 0.0,
+      "f_xn": 0.0,
+      "df_xn": 4.0,
+      "d2f_xn": -2.0,
+      "x_next": 2.0,
+      "step": 2.0
+    }
+  ],
+  "function_str": "-x**2 + 4*x",
+  "derivative_str": "-2*x + 4",
+  "second_derivative_str": "-2",
+  "message": "Maximum found at x = 2.0 with f(x) = 4.0"
+}
+```
+
+<Note>
+  For a quadratic polynomial Newton-Raphson converges in a single iteration regardless of the starting point `x₀`, because `f′(x)` is linear. For higher-degree polynomials, choose `x₀` close to the expected critical point for reliable convergence.
+</Note>
+
+<Warning>
+  The Newton-Raphson step divides by `f″(xₙ)`. If `f″(xₙ) ≈ 0` at any iteration (e.g. near an inflection point), the step becomes very large and the method may diverge. The endpoint returns HTTP `422 Unprocessable Entity` if a division-by-zero occurs.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/newton/health`**
+
+Returns a liveness confirmation for the Newton-Raphson Optimization service.
+
+```bash
+curl https://api.example.com/api/v1/newton/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "newton-optimizer-api"
+}
+```

@@ -1,0 +1,224 @@
+---
+title: "Graphical Method for 2-Variable Linear Programs"
+sidebarTitle: "Graphical LP"
+description: "Visualize the feasible region, constraint lines, and optimal point for 2-variable linear programs. Automatically generated when using the Simplex solver with 2 variables."
+---
+
+The graphical method translates a 2-variable linear program into a set of geometric objects — boundary lines, a feasible polygon, corner vertices, an objective-level line, and the optimal point — that can be rendered directly as a 2D chart. It is not a standalone endpoint; instead, it is **automatically invoked** by `POST /api/v1/simplex/solve` whenever the `objective` array contains exactly **2 coefficients**. The result is returned inside the `graphical` field of the normal Simplex response.
+
+---
+
+## How it is triggered
+
+The simplex route checks the length of `payload.objective` immediately after solving:
+
+```python
+if len(payload.objective) == 2:
+    optimal_point = {
+        "x": result.variables.get("x1", 0.0),
+        "y": result.variables.get("x2", 0.0),
+    }
+    graphical = build_graphical_data(
+        objective=payload.objective,
+        goal=payload.goal,
+        constraint_coeffs=[c.coefficients for c in payload.constraints],
+        inequalities=[c.inequality for c in payload.constraints],
+        rhs_values=[c.rhs for c in payload.constraints],
+        status=result.status,
+        optimal_point=optimal_point,
+        objective_value=result.objective_value,
+    )
+```
+
+The `build_graphical_data` function in `graphical_method.py` performs all geometric computations and returns a plain dictionary that is validated against the `GraphicalData` Pydantic schema before serialization.
+
+<Note>
+  The `graphical` field is **only populated for 2-variable problems**. For 3-, 4-, or 5-variable problems it is always `null`.
+</Note>
+
+---
+
+## Geometry pipeline
+
+1. **Constraint objects** — each user constraint `aᵢx + bᵢy ≤/≥/= cᵢ` is converted to a `Constraint2D` dataclass. Two implicit non-negativity constraints (`x ≥ 0`, `y ≥ 0`) are appended.
+
+2. **Feasible intersections** — every pair of constraint boundary lines is intersected using Cramer's rule. Points that satisfy all constraints (within tolerance `ε = 1e-8`) are kept as corner candidates. Duplicate points (closer than `1e-6`) are deduplicated.
+
+3. **Bounds computation** — `x_max` and `y_max` are derived from the feasible corner points and the axis intercepts of each constraint. A 15% margin is added so chart elements are never clipped at the edge.
+
+4. **Constraint line segments** — for each user constraint the boundary line `ax + by = c` is clipped to the computed bounds, yielding exactly two endpoint coordinates suitable for chart rendering.
+
+5. **Feasible polygon** — the corner points are sorted by polar angle around their centroid (counter-clockwise) using `atan2`. If the resulting polygon encloses a non-zero area it is returned as an ordered vertex list; otherwise `null` is returned.
+
+6. **Objective line** — the line `c₁x + c₂y = Z*` is clipped to the bounds and returned as a `GraphLine` with `label: "objetivo"`.
+
+7. **Optimal point** — the `x1`, `x2` values from the Simplex result are packaged as `{ "x": ..., "y": ... }`.
+
+---
+
+## Response fields
+
+The `graphical` object inside the Simplex response has the following structure.
+
+<ResponseField name="status" type="string">
+  Mirrors the Simplex solution status: `"optimal"`, `"unbounded"`, or `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="goal" type="string">
+  Optimization direction passed in the request: `"max"` or `"min"`.
+</ResponseField>
+
+<ResponseField name="bounds" type="GraphBounds">
+  Axis ranges to use when initializing the chart viewport.
+
+  <Expandable title="GraphBounds fields">
+    <ResponseField name="x_min" type="number">Left boundary of the chart (always `0.0`).</ResponseField>
+    <ResponseField name="x_max" type="number">Right boundary, computed from constraint intercepts plus a 15% margin.</ResponseField>
+    <ResponseField name="y_min" type="number">Bottom boundary of the chart (always `0.0`).</ResponseField>
+    <ResponseField name="y_max" type="number">Top boundary, computed from constraint intercepts plus a 15% margin.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="constraints" type="GraphLine[]">
+  One entry per user-supplied constraint. Each entry describes the boundary line clipped to the chart bounds.
+
+  <Expandable title="GraphLine fields">
+    <ResponseField name="a" type="number">Coefficient of `x` in `ax + by = c`.</ResponseField>
+    <ResponseField name="b" type="number">Coefficient of `y` in `ax + by = c`.</ResponseField>
+    <ResponseField name="c" type="number">Right-hand side value (the level of the boundary line).</ResponseField>
+    <ResponseField name="points" type="GraphPoint[]">
+      Exactly two `{ "x": ..., "y": ... }` objects — the endpoints of the clipped segment.
+    </ResponseField>
+    <ResponseField name="label" type="string | null">Constraint label, e.g. `"c1"`, `"c2"`, …</ResponseField>
+    <ResponseField name="inequality" type="string | null">Original constraint direction: `"<="`, `">="`, or `"="`.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="feasible_polygon" type="GraphPoint[] | null">
+  Ordered list of `{ "x": ..., "y": ... }` corner points that define the feasible region polygon, sorted counter-clockwise by polar angle. `null` when the feasible region is empty, a single point, or a line segment.
+</ResponseField>
+
+<ResponseField name="vertices" type="GraphPoint[]">
+  All corner points of the feasible region sorted in the same counter-clockwise order. These are the candidate optimal points of the LP by the extreme-point theorem.
+</ResponseField>
+
+<ResponseField name="objective_line" type="GraphLine | null">
+  The objective function evaluated at `Z*`, i.e. the line `c₁x + c₂y = Z*`, clipped to the chart bounds. `null` when the problem is infeasible or the objective is identically zero.
+
+  <Expandable title="GraphLine fields (same as constraints)">
+    <ResponseField name="a" type="number">Objective coefficient of `x`.</ResponseField>
+    <ResponseField name="b" type="number">Objective coefficient of `y`.</ResponseField>
+    <ResponseField name="c" type="number">Optimal objective value `Z*`.</ResponseField>
+    <ResponseField name="points" type="GraphPoint[]">Two endpoint objects for the clipped segment.</ResponseField>
+    <ResponseField name="label" type="string">`"objetivo"` (fixed label).</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="optimal_point" type="GraphPoint | null">
+  The optimal solution as `{ "x": x1*, "y": x2* }`. `null` when no optimal solution exists.
+</ResponseField>
+
+<ResponseField name="objective_value" type="number | null">
+  Numeric value of `Z*`. Matches `objective_value` in the parent Simplex response.
+</ResponseField>
+
+---
+
+## 2-variable request and graphical response
+
+### Request
+
+```json
+{
+  "objective": [5, 4],
+  "goal": "max",
+  "constraints": [
+    { "coefficients": [6, 4], "inequality": "<=", "rhs": 24 },
+    { "coefficients": [1, 2], "inequality": "<=", "rhs": 6 }
+  ]
+}
+```
+
+### Graphical response snippet
+
+```json
+{
+  "status": "optimal",
+  "objective_value": 21.0,
+  "variables": { "x1": 3.0, "x2": 1.5 },
+  "iterations": 2,
+  "graphical": {
+    "status": "optimal",
+    "goal": "max",
+    "bounds": { "x_min": 0.0, "x_max": 4.6, "y_min": 0.0, "y_max": 3.45 },
+    "constraints": [
+      {
+        "a": 6.0, "b": 4.0, "c": 24.0,
+        "points": [{ "x": 0.0, "y": 6.0 }, { "x": 4.0, "y": 0.0 }],
+        "label": "c1",
+        "inequality": "<="
+      },
+      {
+        "a": 1.0, "b": 2.0, "c": 6.0,
+        "points": [{ "x": 0.0, "y": 3.0 }, { "x": 4.6, "y": 0.0 }],
+        "label": "c2",
+        "inequality": "<="
+      }
+    ],
+    "feasible_polygon": [
+      { "x": 0.0, "y": 0.0 },
+      { "x": 4.0, "y": 0.0 },
+      { "x": 3.0, "y": 1.5 },
+      { "x": 0.0, "y": 3.0 }
+    ],
+    "vertices": [
+      { "x": 0.0, "y": 0.0 },
+      { "x": 4.0, "y": 0.0 },
+      { "x": 3.0, "y": 1.5 },
+      { "x": 0.0, "y": 3.0 }
+    ],
+    "objective_line": {
+      "a": 5.0, "b": 4.0, "c": 21.0,
+      "points": [{ "x": 0.0, "y": 5.25 }, { "x": 4.2, "y": 0.0 }],
+      "label": "objetivo"
+    },
+    "optimal_point": { "x": 3.0, "y": 1.5 }
+  }
+}
+```
+
+---
+
+## cURL example
+
+<CodeGroup>
+```bash cURL
+curl -X POST http://localhost:8000/api/v1/simplex/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "objective": [5, 4],
+    "goal": "max",
+    "constraints": [
+      { "coefficients": [6, 4], "inequality": "<=", "rhs": 24 },
+      { "coefficients": [1, 2], "inequality": "<=", "rhs": 6 }
+    ]
+  }'
+```
+</CodeGroup>
+
+---
+
+## Frontend rendering
+
+The frontend uses the `graphical` payload to draw a Plotly.js 2D scatter/line chart:
+
+- **Constraint lines** — each entry in `constraints` produces a line trace drawn between its two `points`, labelled with its `label` string.
+- **Feasible polygon** — `feasible_polygon` (if non-null) is rendered as a filled, semi-transparent shape using a scatter trace in `"toself"` fill mode.
+- **Corner vertices** — each point in `vertices` is drawn as a marker, allowing users to inspect the extreme points of the feasible region.
+- **Objective line** — `objective_line` is drawn as a dashed line to show the level curve of `Z*` passing through the optimal point.
+- **Optimal point** — `optimal_point` is rendered as a highlighted marker with an annotation showing its coordinates and the objective value.
+- **Viewport** — `bounds` provides `x_min`, `x_max`, `y_min`, `y_max` for configuring the Plotly axis ranges, ensuring all elements are visible with the pre-computed margin.
+
+<Tip>
+  All coordinate values in the graphical payload are rounded to 6 decimal places by `_round()` in `graphical_method.py`, keeping the JSON compact and preventing floating-point noise in chart labels.
+</Tip>

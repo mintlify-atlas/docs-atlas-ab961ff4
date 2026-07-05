@@ -1,0 +1,293 @@
+---
+title: "Frontend Architecture: React Atomic Design"
+sidebarTitle: "Frontend"
+description: "How the React 18 + TypeScript frontend is structured using atomic design — atoms, molecules, organisms, templates, and pages — with hooks and service layers."
+---
+
+The frontend is a React 18 single-page application written in TypeScript and bundled by Vite. It applies the atomic design methodology throughout `src/components/`, grouping reusable UI primitives into atoms, composing them into molecules and organisms, wrapping them in layout templates, and finally assembling full solver experiences as page components. A dedicated service layer handles all HTTP communication with the FastAPI backend, custom hooks encapsulate form state and async dispatch, and shared TypeScript interfaces in `src/types/` keep the request and response shapes in sync with Pydantic schemas on the backend.
+
+## Entry point
+
+`src/main.tsx` mounts the React tree into `#root` inside React's `StrictMode`:
+
+```tsx
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./styles/globals.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+```
+
+`App.tsx` implements a lightweight client-side router using a single `screen` state value. The last-visited solver method is persisted to `localStorage` under the key `simplex-app:last-method` so the user lands back on their preferred tool after a page refresh.
+
+```tsx
+type Screen = Method | "home";
+
+function App() {
+  const [screen, setScreen] = useState<Screen>("home");
+  const [lastMethod, setLastMethod] = useState<Method>(readLastMethod);
+
+  if (screen === "home")      return <HomePage      lastMethod={lastMethod} onSelect={handleSelect} />;
+  if (screen === "binary")    return <BinaryPage    onHome={goHome} />;
+  if (screen === "integer")   return <IntegerPage   onHome={goHome} />;
+  if (screen === "bisection") return <BisectionPage onHome={goHome} />;
+  if (screen === "multivar")  return <MultivarPage  onHome={goHome} />;
+  if (screen === "kkt")       return <KKTPage       onHome={goHome} />;
+  return <SolverPage onHome={goHome} />;
+}
+```
+
+## Atomic design layers
+
+The component hierarchy moves from simple, stateless primitives up to full page experiences, with each layer depending only on layers below it.
+
+### Atoms
+
+Atoms are the smallest reusable UI elements. They have no knowledge of domain data — they accept only style and callback props.
+
+| Atom | Description |
+|---|---|
+| `Button` | Styled action button with variant and disabled props |
+| `Input` | Numeric and text input with label support |
+| `Select` | Dropdown for goal (`max`/`min`) and inequality selectors |
+| `Badge` | Status chip for solver result states (`optimal`, `infeasible`, `unbounded`) |
+| `Label` | Accessible form label wrapper |
+| `Spinner` | Loading indicator shown during API calls |
+
+### Molecules
+
+Molecules combine two or more atoms into a small, focused UI unit.
+
+| Molecule | Description |
+|---|---|
+| `TableauTable` | Renders the final and per-iteration simplex tableaux from `tableau_rows` |
+| `GraphicalPlot` | Plotly.js wrapper for 2-D feasible region plots |
+| `TabGroup` | Tab-switching control used to navigate between tableau, graphical, and iteration views |
+| `ObjectiveRow` | A single row of objective coefficient inputs |
+| `ConstraintRow` | One constraint: coefficient inputs, inequality selector, and RHS input |
+| `MetricCard` | Key-value card displaying a single result metric (e.g. objective value) |
+| `ErrorBanner` | Dismissable error message strip |
+
+### Organisms
+
+Organisms are domain-aware sections of the UI. They own local layout and may manage their own sub-state (e.g. dynamic rows).
+
+| Organism | Description |
+|---|---|
+| `AppHeader` | Top navigation bar with method title and home button |
+| `ObjectiveForm` | Full objective function input section (variable count selector + coefficient row) |
+| `ConstraintsForm` | Manages a dynamic list of `ConstraintRow` molecules with add/remove controls |
+| `SolutionDisplay` | Renders the complete solver result: status badge, metrics, tableau, and graphical output |
+
+### Templates
+
+Templates are layout skeletons with no domain logic. `SolverTemplate` defines the two-column or stacked layout that all solver pages share — form on the left, results on the right — without knowing which solver is being displayed.
+
+### Pages
+
+Pages are the top-level components mounted by `App.tsx`. Each page imports a solver-specific hook and passes its state and callbacks into the template.
+
+| Page | Route | Solver |
+|---|---|---|
+| `HomePage` | `home` | Method selection landing screen |
+| `SolverPage` | `simplex` | Big-M LP Simplex |
+| `BinaryPage` | `binary` | Binary integer programming (B&B) |
+| `IntegerPage` | `integer` | Pure integer programming (B&B) |
+| `BisectionPage` | `bisection` | Single-variable bisection method |
+| `MultivarPage` | `multivar` | Multi-variable gradient + graphical output |
+| `KKTPage` | `kkt` | Karush-Kuhn-Tucker conditions |
+
+## Service layer
+
+Each solver method has a dedicated `*Api.ts` file in `src/services/`. All services share the same `post<TBody, TResponse>` generic helper that reads the base URL from the `VITE_API_URL` environment variable and converts non-2xx responses into a typed `ApiError`.
+
+```ts
+// src/services/simplexApi.ts
+
+import type { SimplexRequest, SimplexResponse } from "../types/simplex";
+
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
+
+class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+async function post<TBody, TResponse>(
+  path: string,
+  body: TBody,
+): Promise<TResponse> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = await response
+      .json()
+      .then((d: { detail?: string }) => d.detail ?? response.statusText)
+      .catch(() => response.statusText);
+    throw new ApiError(response.status, String(detail));
+  }
+
+  return response.json() as Promise<TResponse>;
+}
+
+export const simplexApi = {
+  solve: (payload: SimplexRequest): Promise<SimplexResponse> =>
+    post<SimplexRequest, SimplexResponse>("/simplex/solve", payload),
+};
+```
+
+<Note>
+  Set `VITE_API_URL` in a `.env` file at the root of `frontend/` to point at a deployed backend. The default falls back to `http://localhost:8000/api/v1` for local development.
+</Note>
+
+## Hooks layer
+
+Each solver has a matching `use*.ts` hook in `src/hooks/`. Hooks encapsulate all async state (`result`, `loading`, `error`) and expose a `solve()` callback and a `reset()` helper. They never render anything — they only manage state and call the service layer.
+
+```ts
+// src/hooks/useSimplex.ts
+
+export function useSimplex() {
+  const [state, setState] = useState<UseSolverState>({
+    result: null,
+    loading: false,
+    error: null,
+  });
+
+  const solve = useCallback(
+    async (
+      nVars: VariableCount,
+      objCoeffs: number[],
+      goal: Goal,
+      constraints: Constraint[],
+    ) => {
+      setState({ result: null, loading: true, error: null });
+
+      try {
+        const result = await simplexApi.solve({
+          objective: objCoeffs.slice(0, nVars),
+          goal,
+          constraints: constraints.map((c) => ({
+            coefficients: c.coefficients.slice(0, nVars),
+            inequality: c.inequality,
+            rhs: c.rhs,
+          })),
+        });
+        setState({ result, loading: false, error: null });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Ocurrió un error inesperado";
+        setState({ result: null, loading: false, error: message });
+      }
+    },
+    [],
+  );
+
+  const reset = useCallback(() => {
+    setState({ result: null, loading: false, error: null });
+  }, []);
+
+  return { ...state, solve, reset };
+}
+```
+
+<Tip>
+  The `VariableCount` type (`2 | 3 | 4 | 5`) enforces at the type level that `objCoeffs` and constraint rows are sliced to a supported size before being sent to the API, preventing accidental over-posting of empty trailing zeros from the form.
+</Tip>
+
+## TypeScript types
+
+`src/types/simplex.ts` defines domain aliases and interfaces that mirror the backend Pydantic schemas exactly. These are the single source of truth for both the service layer and all consuming components.
+
+```ts
+// Domain types
+export type Goal          = "max" | "min";
+export type Inequality    = "<=" | ">=" | "=";
+export type VariableCount = 2 | 3 | 4 | 5;
+export type SolveStatus   = "optimal" | "unbounded" | "infeasible";
+
+// API request
+export interface SimplexRequest {
+  objective: number[];
+  goal: Goal;
+  constraints: Array<{
+    coefficients: number[];
+    inequality: Inequality;
+    rhs: number;
+  }>;
+}
+
+// API response
+export interface SimplexResponse {
+  status: SolveStatus;
+  objective_value?: number;
+  variables?: Record<string, number>;
+  iterations?: number;
+  tableau_headers?: string[];
+  tableau_rows?: TableauRow[];
+  message?: string;
+  graphical?: GraphicalData | null;
+  iteration_tableaux?: IterationTableau[] | null;
+}
+```
+
+## Plotly.js integration
+
+The frontend uses `plotly.js-dist-min` (v3.7.0) and `react-plotly.js` (v4.0.0) for all chart output. Three distinct chart types are produced depending on the solver:
+
+| Chart type | Solver | Data source |
+|---|---|---|
+| 2-D feasible region | Simplex (2-variable) | `SimplexResponse.graphical` — constraint lines, feasible polygon, optimal point |
+| Branch & Bound tree | Binary / Integer | `BinaryResponse.nodes` — node graph with edge labels |
+| 3-D surface + volume | Gradient / KKT | `GradientResponse` — `SurfaceData.x/y/z` mesh grid |
+
+<Note>
+  `plotly.js-dist-min` is the minified pre-built bundle, so no additional Webpack/Rollup configuration for Plotly is needed — Vite can import it directly as an ES module.
+</Note>
+
+## Build tooling
+
+The project uses Vite 5 with the `@vitejs/plugin-react` plugin and TypeScript 5.5.
+
+```json
+{
+  "scripts": {
+    "dev":     "vite",
+    "build":   "vite build",
+    "preview": "vite preview",
+    "lint":    "eslint src --ext ts,tsx --report-unused-disable-directives"
+  }
+}
+```
+
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Start Vite HMR dev server at `http://localhost:5173` |
+| `npm run build` | Bundle the app for production into `dist/` |
+| `npm run preview` | Serve the production bundle locally for testing |
+| `npm run lint` | Run ESLint with TypeScript and React Hooks rules across all `.ts` and `.tsx` files |
+
+## Starting the development server
+
+```bash
+cd frontend
+npm install
+cp .env.example .env   # Set VITE_API_URL if needed
+npm run dev
+```
+
+Open **http://localhost:5173** in the browser. Ensure the backend is running on port `8000` (or update `VITE_API_URL` in `.env`) so API calls resolve correctly.

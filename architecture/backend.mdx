@@ -1,0 +1,305 @@
+---
+title: "Backend Architecture: FastAPI Optimization Engines"
+sidebarTitle: "Backend"
+description: "Deep-dive into the FastAPI backend: route organization, engine classes, Pydantic v2 schemas, CORS configuration, and how each solver is structured."
+---
+
+The backend is a single FastAPI application defined in `backend/app/main.py`. It mounts seven routers under a shared `/api/v1` prefix, uses Pydantic v2 for all request and response validation, and delegates every computation to a dedicated engine class in `app/core/`. NumPy handles the tableau arithmetic; SymPy handles symbolic differentiation for the polynomial and expression-based solvers; and `python-dotenv` loads environment-specific configuration at startup.
+
+## Application setup
+
+The `FastAPI` instance is created with explicit metadata and interactive documentation URLs that are served on every environment.
+
+```python
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="API de Optimización",
+    description="API REST para resolver Programación Lineal (Simplex) y "
+                "Programación Entera Binaria (Branch & Bound).",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+```
+
+<Note>
+  The interactive Swagger UI is available at **http://localhost:8000/docs** and ReDoc at **http://localhost:8000/redoc** while the development server is running. Both are auto-generated from the Pydantic schemas with no extra configuration.
+</Note>
+
+## CORS configuration
+
+The middleware explicitly allows the Vite dev server, a local Create-React-App port, and the production GitHub Pages deployment.
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "https://fabianelov.github.io",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+<Tip>
+  When deploying to a different production domain, add its origin to `allow_origins` or read the list from an environment variable via `python-dotenv`.
+</Tip>
+
+## Router structure
+
+All seven routers are registered in `main.py` with the same `/api/v1` prefix. Each router lives in its own file under `app/api/routes/` and exposes at least a `POST /solve` endpoint and a `GET /health` health-check endpoint.
+
+```python
+app.include_router(simplex_router,   prefix="/api/v1")
+app.include_router(binary_router,    prefix="/api/v1")
+app.include_router(integer_router,   prefix="/api/v1")
+app.include_router(bisection_router, prefix="/api/v1")
+app.include_router(newton_router,    prefix="/api/v1")
+app.include_router(gradient_router,  prefix="/api/v1")
+app.include_router(kkt_router,       prefix="/api/v1")
+```
+
+| Router file | Mount path | Solve endpoint |
+|---|---|---|
+| `routes/simplex.py` | `/api/v1` | `POST /api/v1/simplex/solve` |
+| `routes/binary.py` | `/api/v1` | `POST /api/v1/binary/solve` |
+| `routes/integer.py` | `/api/v1` | `POST /api/v1/integer/solve` |
+| `routes/bisection.py` | `/api/v1` | `POST /api/v1/bisection/solve` |
+| `routes/newton.py` | `/api/v1` | `POST /api/v1/newton/solve` |
+| `routes/gradient.py` | `/api/v1` | `POST /api/v1/gradient/solve` |
+| `routes/kkt.py` | `/api/v1` | `POST /api/v1/kkt/solve` |
+
+A root `GET /` endpoint returns a simple liveness message and the docs path:
+
+```python
+@app.get("/", tags=["root"])
+def root() -> dict:
+    return {"message": "Optimización Simplex API", "docs": "/docs"}
+```
+
+## Engine class pattern
+
+Every solver follows the same pattern: a class in `app/core/` accepts all problem parameters in its constructor and exposes a single `.solve()` method that returns a result dataclass. This isolates computation from HTTP concerns completely.
+
+The `SimplexEngine` is the reference implementation:
+
+```python
+class SimplexEngine:
+    """Solves a linear programme using the Big-M method for mixed constraints."""
+
+    BIG_M = 1e6
+
+    def __init__(
+        self,
+        objective: list[float],
+        goal: Literal["max", "min"],
+        constraint_coeffs: list[list[float]],
+        inequalities: list[Literal["<=", ">=", "="]],
+        rhs_values: list[float],
+    ) -> None:
+        ...
+        self._build_tableau()
+
+    def solve(self) -> SimplexResult:
+        ...
+```
+
+The engine converts minimization to maximization internally (by negating the objective), normalizes rows with a negative RHS, and then builds an augmented tableau with slack, surplus, and artificial variables via the Big-M penalty method. The pivot loop runs for at most `MAX_ITER = 200` steps, detecting unbounded problems (no valid pivot row) and infeasible problems (artificial variables remaining in the basis at a non-zero value) before extracting the final solution.
+
+```python
+@dataclass
+class SimplexResult:
+    status: Literal["optimal", "unbounded", "infeasible"]
+    objective_value: float = 0.0
+    variables: dict[str, float] = field(default_factory=dict)
+    iterations: int = 0
+    tableau_headers: list[str] = field(default_factory=list)
+    tableau_rows: list[dict] = field(default_factory=list)
+    message: str = ""
+    iteration_tableaux: list[dict] = field(default_factory=list)
+```
+
+<Note>
+  Per-iteration tableau snapshots are stored in `iteration_tableaux` so the frontend can replay each pivot step in the `TableauTable` molecule component.
+</Note>
+
+## Pydantic v2 schemas
+
+All schemas live in `app/models/schemas.py` and use Pydantic v2 syntax (`field_validator`, `Field` with `min_length`/`max_length`). Cross-field validation — such as ensuring every constraint has the same number of coefficients as the objective vector — is performed inside `@field_validator` methods before the engine is ever instantiated.
+
+### Core LP schemas
+
+```python
+class Constraint(BaseModel):
+    coefficients: list[float] = Field(..., min_length=2, max_length=5)
+    inequality: Literal["<=", ">=", "="]
+    rhs: float
+
+    @field_validator("coefficients")
+    @classmethod
+    def check_length(cls, v: list[float]) -> list[float]:
+        if not (2 <= len(v) <= 5):
+            raise ValueError("Los coeficientes deben estar entre 2 y 5 elementos")
+        return v
+
+
+class SimplexRequest(BaseModel):
+    objective: list[float] = Field(..., min_length=2, max_length=5)
+    goal: Literal["max", "min"]
+    constraints: list[Constraint] = Field(..., min_length=1)
+
+    @field_validator("constraints")
+    @classmethod
+    def same_size(cls, v: list[Constraint], info) -> list[Constraint]:
+        if "objective" in (info.data or {}):
+            n = len(info.data["objective"])
+            for c in v:
+                if len(c.coefficients) != n:
+                    raise ValueError(
+                        f"Las restricciones deben tener {n} coeficientes "
+                        "para coincidir con la función objetivo"
+                    )
+        return v
+```
+
+### Simplex response schema
+
+```python
+class TableauRow(BaseModel):
+    basic_variable: str
+    values: list[float]
+
+class IterationTableau(BaseModel):
+    iteration: int
+    entering: str | None = None
+    leaving: str | None = None
+    tableau_headers: list[str]
+    tableau_rows: list[TableauRow]
+
+class SimplexResponse(BaseModel):
+    status: Literal["optimal", "unbounded", "infeasible"]
+    objective_value: float | None = None
+    variables: dict[str, float] | None = None
+    iterations: int | None = None
+    tableau_headers: list[str] | None = None
+    tableau_rows: list[TableauRow] | None = None
+    message: str | None = None
+    graphical: GraphicalData | None = None
+    iteration_tableaux: list[IterationTableau] | None = None
+```
+
+### Binary / Integer B&B schemas
+
+The Branch & Bound solvers return tree node data so the frontend can render the B&B exploration tree.
+
+```python
+class BBNode(BaseModel):
+    node_id: int
+    parent_id: int | None = None
+    depth: int
+    fixed_vars: dict[str, int]
+    lp_value: float | None = None
+    lp_vars: dict[str, float] | None = None
+    status: str
+    branched_on: str | None = None
+    edge_label: str | None = None
+
+class BinaryResponse(BaseModel):
+    status: Literal["optimal", "infeasible", "limit"]
+    objective_value: float | None = None
+    variables: dict[str, int] | None = None
+    nodes_explored: int
+    nodes: list[BBNode]
+    message: str
+```
+
+### Gradient and graphical multi-variable schemas
+
+```python
+class GradientRequest(BaseModel):
+    expression: str
+    variables: list[str] = Field(..., min_length=2, max_length=3)
+    x0: list[float] = Field(..., min_length=2, max_length=3)
+    goal: Literal["max", "min"]
+    step_size: float = Field(default=0.1, gt=0)
+    tolerance: float = Field(default=1e-6, gt=0, le=1.0)
+    max_iterations: int = Field(default=100, ge=1, le=500)
+
+class SurfaceData(BaseModel):
+    x: list[float]
+    y: list[float]
+    z: list[list[float | None]]
+```
+
+## API example
+
+```http
+POST http://localhost:8000/api/v1/simplex/solve
+Content-Type: application/json
+
+{
+  "objective":   [3, 2, 5],
+  "goal":        "max",
+  "constraints": [
+    { "coefficients": [1, 0, 1], "inequality": "<=", "rhs": 430 },
+    { "coefficients": [0, 1, 1], "inequality": "<=", "rhs": 460 },
+    { "coefficients": [1, 1, 0], "inequality": "<=", "rhs": 420 }
+  ]
+}
+```
+
+```json
+{
+  "status":          "optimal",
+  "objective_value": 1350.0,
+  "variables":       { "x1": 0.0, "x2": 100.0, "x3": 230.0 },
+  "iterations":      3,
+  "message":         "Se encontró una solución óptima después de 3 iteración(es)."
+}
+```
+
+## Dependencies
+
+All backend dependencies are pinned to exact versions in `requirements.txt`.
+
+```text
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+numpy==2.1.1
+sympy==1.13.3
+python-dotenv==1.0.1
+httpx==0.27.2
+```
+
+| Package | Role |
+|---|---|
+| `fastapi` | ASGI web framework, automatic OpenAPI generation |
+| `uvicorn[standard]` | ASGI server with WebSocket and HTTP/2 support |
+| `pydantic` | Request/response validation and serialization (v2) |
+| `numpy` | Tableau arithmetic in all LP and B&B engines |
+| `sympy` | Symbolic differentiation for bisection, Newton, gradient, and KKT solvers |
+| `python-dotenv` | Loads `.env` for `VITE_API_URL` and other settings |
+| `httpx` | Async HTTP client available for inter-service calls or tests |
+
+## Starting the development server
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+```
+
+Health-check the running server:
+
+```bash
+curl http://localhost:8000/api/v1/simplex/health
+```

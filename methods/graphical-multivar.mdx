@@ -1,0 +1,207 @@
+---
+title: "Graphical Method for Multivariable Unconstrained Functions"
+sidebarTitle: "Graphical Multivar"
+description: "Find and classify critical points of 2–3 variable functions. Returns surface grid data (2D) or volume scatter data (3D) for Plotly visualization."
+---
+
+The graphical method for multivariable functions locates and classifies the critical points of an unconstrained objective function by solving `∇f(x) = 0` numerically. Rather than relying on `sympy.solve` (which can hang or return parametric solution sets for non-polynomial expressions), the engine uses **multivariate Newton's method** seeded from a grid of starting points inside the user-supplied bounds:
+
+```
+x^(k+1) = x^k − H(x^k)⁻¹ · ∇f(x^k)
+```
+
+Each discovered critical point is then classified by inspecting the eigenvalues of the Hessian: all positive → **minimum**, all negative → **maximum**, mixed signs → **saddle**, near-zero eigenvalue → **degenerate**. In addition to critical-point analysis, the endpoint returns grid data ready to render in Plotly — a surface mesh for 2-variable functions or a 3D volume scatter for 3-variable functions.
+
+---
+
+## Endpoint
+
+```
+POST /api/v1/gradient/graphical
+```
+
+---
+
+## Request
+
+<ParamField body="expression" type="string" required>
+  The objective function as a SymPy-compatible symbolic string. Use `**` for exponents and `*` for multiplication.
+
+  Examples: `"x**2 + y**2"`, `"x**3 - 3*x + y**2 - 2*y"`
+</ParamField>
+
+<ParamField body="variables" type="string[]" required>
+  List of variable names used in the expression. Must contain **2 or 3** names.
+
+  Example: `["x", "y"]`
+</ParamField>
+
+<ParamField body="bounds" type="number[][]" required>
+  Search domain for each variable, as a list of `[min, max]` pairs — one per variable, in the same order as `variables`.
+
+  Example: `[[-5, 5], [-5, 5]]`
+
+  <Note>
+    Every bound must satisfy `max > min`. The number of bounds must equal the number of variables. Critical points found outside the domain are discarded; only the visualization grid is clipped to the domain.
+  </Note>
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Which type of critical point to treat as the optimum: `"min"` or `"max"`. If no matching critical point is found inside the domain, the closest available critical point is returned instead and `status` is set to `"no_critical_point"`.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  `"optimal"` if a critical point whose `nature` matches `goal` was found inside the bounds; `"no_critical_point"` otherwise (the engine may still return the best available critical point with a different nature).
+</ResponseField>
+
+<ResponseField name="variables" type="string[]">
+  Echo of the variable names from the request.
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  The expression as parsed and simplified by SymPy.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="number[] | null">
+  Coordinates of the best critical point found, ordered to match `variables`. `null` if no critical points were located inside the domain.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="number | null">
+  Function value at `optimal_point`.
+</ResponseField>
+
+<ResponseField name="critical_points" type="CriticalPointSchema[]">
+  All distinct critical points found within the domain, each with its classification.
+
+  <Expandable title="CriticalPointSchema fields">
+    <ResponseField name="point" type="number[]">
+      Coordinates of the critical point, in the same order as `variables`.
+    </ResponseField>
+    <ResponseField name="value" type="number">
+      Objective function value at this point.
+    </ResponseField>
+    <ResponseField name="nature" type="string">
+      Classification based on Hessian eigenvalues:
+      - `"min"` — all eigenvalues positive (local minimum)
+      - `"max"` — all eigenvalues negative (local maximum)
+      - `"saddle"` — mixed-sign eigenvalues
+      - `"degenerate"` — at least one eigenvalue is near zero (test inconclusive)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="surface" type="SurfaceData | null">
+  Present only for **2-variable** functions. Contains a 60×60 evaluation grid over the domain for rendering a 3D surface or contour plot in Plotly.
+
+  <Expandable title="SurfaceData fields">
+    <ResponseField name="x" type="number[]">
+      60 evenly-spaced x-axis values spanning the first variable's bounds.
+    </ResponseField>
+    <ResponseField name="y" type="number[]">
+      60 evenly-spaced y-axis values spanning the second variable's bounds.
+    </ResponseField>
+    <ResponseField name="z" type="(number | null)[][]">
+      A 60×60 matrix of function values. Entries are `null` where the function is not finite (e.g., division by zero or `NaN`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="volume" type="VolumeData | null">
+  Present only for **3-variable** functions. Contains a 25×25×25 scattered point cloud for rendering an isosurface or volume in Plotly.
+
+  <Expandable title="VolumeData fields">
+    <ResponseField name="x" type="number[]">
+      Flattened x-coordinates of the 3D grid (15,625 points total).
+    </ResponseField>
+    <ResponseField name="y" type="number[]">
+      Flattened y-coordinates of the 3D grid.
+    </ResponseField>
+    <ResponseField name="z" type="number[]">
+      Flattened z-coordinates of the 3D grid.
+    </ResponseField>
+    <ResponseField name="value" type="(number | null)[]">
+      Function value at each grid point. `null` where the function is not finite.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the outcome, including the optimal point coordinates, its nature, and the function value.
+</ResponseField>
+
+---
+
+## Visualization Layout
+
+| Variable count | `surface` | `volume` | Recommended Plotly trace |
+|:--------------:|:---------:|:--------:|--------------------------|
+| 2              | ✓ present | `null`   | `Surface` or `Contour`   |
+| 3              | `null`    | ✓ present| `Volume` or `Isosurface` |
+
+<Note>
+  `surface` is always `null` for 3-variable functions, and `volume` is always `null` for 2-variable functions. Check `variables.length` in the response before accessing either field.
+</Note>
+
+---
+
+## Example
+
+Find the minimum of `f(x, y) = x² + y²` over the domain `[-5, 5] × [-5, 5]`:
+
+```bash
+curl -X POST https://api.example.com/api/v1/gradient/graphical \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + y**2",
+    "variables": ["x", "y"],
+    "bounds": [[-5, 5], [-5, 5]],
+    "goal": "min"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "status": "optimal",
+  "variables": ["x", "y"],
+  "function_str": "x**2 + y**2",
+  "optimal_point": [0.0, 0.0],
+  "optimal_value": 0.0,
+  "critical_points": [
+    {
+      "point": [0.0, 0.0],
+      "value": 0.0,
+      "nature": "min"
+    }
+  ],
+  "surface": {
+    "x": [-5.0, -4.830508..., ..., 5.0],
+    "y": [-5.0, -4.830508..., ..., 5.0],
+    "z": [[50.0, 48.33..., ...], ...]
+  },
+  "volume": null,
+  "message": "Se encontró un mínimo local en (x = 0, y = 0) con f = 0."
+}
+```
+
+---
+
+## Critical-Point Classification Details
+
+Critical points are found by running Newton's method from a uniform grid of seed points inside the domain (6 seeds per axis for 2-variable functions, 4 per axis for 3-variable functions). Duplicate roots are removed by rounding coordinates to 5 decimal places. Classification uses the eigenvalues of the symbolic Hessian:
+
+| Eigenvalue pattern | `nature` |
+|---|---|
+| All λ > 0 | `"min"` |
+| All λ < 0 | `"max"` |
+| Mixed signs | `"saddle"` |
+| Any \|λ\| < 1e-6 | `"degenerate"` |
+
+<Note>
+  The method uses a fixed seed grid, so critical points that lie very close to the boundaries of the domain, or functions with many local optima, may not all be discovered. Widen the bounds or increase the resolution if you suspect missed roots.
+</Note>

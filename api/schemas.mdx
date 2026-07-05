@@ -1,0 +1,437 @@
+---
+title: "API Request and Response Schemas"
+sidebarTitle: "Schemas"
+description: "Pydantic v2 schemas for all Simplex Optimizer API request and response types, including constraints, tableau rows, graphical data, and node structures."
+---
+
+All request and response bodies in the Simplex Optimizer API are defined as Pydantic v2 models in `backend/app/models/schemas.py`. Pydantic validates every incoming payload automatically—type mismatches or out-of-range values produce a `422 Unprocessable Entity` before the solver is ever called. The sections below document every schema grouped by functional area, with field types, constraints, and default values noted inline.
+
+---
+
+## Shared Types
+
+These schemas appear across multiple solver endpoints and are referenced by both request and response models.
+
+### `Constraint`
+
+Represents a single linear constraint used by the Simplex, binary integer, and pure integer solvers.
+
+<ResponseField name="coefficients" type="list[float]" required>
+  Left-hand-side coefficients for each decision variable. Must contain between **2 and 5** elements, and the length must match the number of elements in the corresponding request's `objective` array.
+</ResponseField>
+
+<ResponseField name="inequality" type="string" required>
+  The constraint direction. Accepted literals: `"<="`, `">="`, `"="`.
+</ResponseField>
+
+<ResponseField name="rhs" type="float" required>
+  Right-hand-side value of the constraint.
+</ResponseField>
+
+```json title="Example Constraint"
+{
+  "coefficients": [2.0, 1.0],
+  "inequality": "<=",
+  "rhs": 14.0
+}
+```
+
+---
+
+### `TableauRow`
+
+A single row of a Simplex tableau snapshot, carrying the name of the basic variable in that row and the full row of numeric values (including objective row coefficients and the RHS).
+
+<ResponseField name="basic_variable" type="string" required>
+  The label of the basic variable occupying this row (e.g. `"x1"`, `"s2"`, `"Z"`).
+</ResponseField>
+
+<ResponseField name="values" type="list[float]" required>
+  All numeric entries for this tableau row, left to right, including the RHS column.
+</ResponseField>
+
+---
+
+### `IterationTableau`
+
+A complete snapshot of the Simplex tableau at one pivot step, returned as part of `SimplexResponse.iteration_tableaux`.
+
+<ResponseField name="iteration" type="int" required>
+  Zero-based iteration index. Iteration `0` is the initial tableau before any pivots.
+</ResponseField>
+
+<ResponseField name="entering" type="string | null">
+  Label of the variable entering the basis at this step. `null` on the final (optimal) tableau.
+</ResponseField>
+
+<ResponseField name="leaving" type="string | null">
+  Label of the variable leaving the basis at this step. `null` on the final tableau.
+</ResponseField>
+
+<ResponseField name="tableau_headers" type="list[string]" required>
+  Column header labels for the tableau (e.g. `["x1", "x2", "s1", "s2", "RHS"]`).
+</ResponseField>
+
+<ResponseField name="tableau_rows" type="list[TableauRow]" required>
+  All rows of the tableau at this iteration, including the objective row.
+
+  <Expandable title="TableauRow fields">
+    <ResponseField name="basic_variable" type="string" required>
+      Label of the basic variable in this row.
+    </ResponseField>
+    <ResponseField name="values" type="list[float]" required>
+      Numeric entries for this row, aligned with `tableau_headers`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Graphical LP Types
+
+These schemas are embedded in `SimplexResponse.graphical` when the LP has exactly two decision variables, and they power the front-end constraint/feasible-region chart.
+
+### `GraphPoint`
+
+A single 2-D coordinate.
+
+<ResponseField name="x" type="float" required>
+  Horizontal axis value.
+</ResponseField>
+
+<ResponseField name="y" type="float" required>
+  Vertical axis value.
+</ResponseField>
+
+---
+
+### `GraphLine`
+
+One constraint or objective line in the graphical LP plot, in the form `ax + by = c`.
+
+<ResponseField name="a" type="float" required>
+  Coefficient of the first variable (x-axis).
+</ResponseField>
+
+<ResponseField name="b" type="float" required>
+  Coefficient of the second variable (y-axis).
+</ResponseField>
+
+<ResponseField name="c" type="float" required>
+  RHS constant of the line equation.
+</ResponseField>
+
+<ResponseField name="points" type="list[GraphPoint]" required>
+  Two endpoints used to draw the line segment across the chart bounds.
+
+  <Expandable title="GraphPoint fields">
+    <ResponseField name="x" type="float" required>Horizontal coordinate.</ResponseField>
+    <ResponseField name="y" type="float" required>Vertical coordinate.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="label" type="string | null">
+  Human-readable label for the line (e.g. `"C1"`, `"Objective"`). `null` when no label is set.
+</ResponseField>
+
+<ResponseField name="inequality" type="string | null">
+  Direction of the half-plane: `"<="`, `">="`, or `"="`. `null` for the objective line.
+</ResponseField>
+
+---
+
+### `GraphBounds`
+
+Axis extents for the graphical LP chart.
+
+<ResponseField name="x_min" type="float" required>Minimum x-axis value.</ResponseField>
+<ResponseField name="x_max" type="float" required>Maximum x-axis value.</ResponseField>
+<ResponseField name="y_min" type="float" required>Minimum y-axis value.</ResponseField>
+<ResponseField name="y_max" type="float" required>Maximum y-axis value.</ResponseField>
+
+---
+
+### `GraphicalData`
+
+The complete graphical payload embedded in a two-variable `SimplexResponse`.
+
+<ResponseField name="status" type="string" required>
+  Solution status: `"optimal"`, `"unbounded"`, or `"infeasible"`.
+</ResponseField>
+
+<ResponseField name="bounds" type="GraphBounds" required>
+  Chart axis extents.
+
+  <Expandable title="GraphBounds fields">
+    <ResponseField name="x_min" type="float" required>Minimum x value.</ResponseField>
+    <ResponseField name="x_max" type="float" required>Maximum x value.</ResponseField>
+    <ResponseField name="y_min" type="float" required>Minimum y value.</ResponseField>
+    <ResponseField name="y_max" type="float" required>Maximum y value.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="constraints" type="list[GraphLine]" required>
+  One `GraphLine` entry per constraint, in the same order as the request.
+</ResponseField>
+
+<ResponseField name="feasible_polygon" type="list[GraphPoint] | null">
+  Ordered vertices that form the boundary of the feasible region. `null` when the problem is infeasible or unbounded.
+</ResponseField>
+
+<ResponseField name="vertices" type="list[GraphPoint]" required>
+  All corner points of the feasible region, including those not evaluated by the objective.
+</ResponseField>
+
+<ResponseField name="objective_line" type="GraphLine | null">
+  The objective function drawn at the optimal value. `null` when the problem is not optimal.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="GraphPoint | null">
+  The optimal solution point. `null` when no optimal solution exists.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  Objective function value at the optimal point. `null` when not optimal.
+</ResponseField>
+
+<ResponseField name="goal" type="string" required>
+  The optimization direction: `"max"` or `"min"`.
+</ResponseField>
+
+---
+
+## Branch & Bound Node Types
+
+These schemas describe individual nodes in the Branch & Bound enumeration tree returned by the binary and pure integer programming solvers.
+
+### `BBNode`
+
+A single node in the binary Branch & Bound tree (`BinaryResponse.nodes`).
+
+<ResponseField name="node_id" type="int" required>
+  Unique integer identifier for this node, assigned in exploration order (root = `0`).
+</ResponseField>
+
+<ResponseField name="parent_id" type="int | null">
+  `node_id` of the parent node. `null` for the root node.
+</ResponseField>
+
+<ResponseField name="depth" type="int" required>
+  Depth of this node in the tree (root = `0`).
+</ResponseField>
+
+<ResponseField name="fixed_vars" type="dict[string, int]" required>
+  Variables fixed to binary values at this node. Keys are variable names (e.g. `"x1"`), values are `0` or `1`.
+</ResponseField>
+
+<ResponseField name="lp_value" type="float | null">
+  Optimal LP relaxation objective value at this node. `null` if the LP relaxation was infeasible.
+</ResponseField>
+
+<ResponseField name="lp_vars" type="dict[string, float] | null">
+  LP relaxation variable values at this node. `null` if infeasible.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Node disposition string, e.g. `"explored"`, `"pruned_infeasible"`, `"pruned_bound"`, `"integer_feasible"`.
+</ResponseField>
+
+<ResponseField name="branched_on" type="string | null">
+  Variable name that was branched on to create this node's children. `null` for leaf nodes.
+</ResponseField>
+
+<ResponseField name="edge_label" type="string | null">
+  Label for the edge connecting this node to its parent in a tree visualization (e.g. `"x2 = 0"`). `null` for the root.
+</ResponseField>
+
+---
+
+### `IntegerNode`
+
+A single node in the pure integer Branch & Bound tree (`IntegerResponse.nodes`). Similar to `BBNode` but uses continuous lower/upper bounds rather than fixed binary assignments, and records the branching direction.
+
+<ResponseField name="node_id" type="int" required>
+  Unique node identifier in exploration order.
+</ResponseField>
+
+<ResponseField name="parent_id" type="int | null">
+  Parent node ID. `null` for the root.
+</ResponseField>
+
+<ResponseField name="depth" type="int" required>
+  Tree depth of this node (root = `0`).
+</ResponseField>
+
+<ResponseField name="lower_bounds" type="dict[string, float]" required>
+  Current lower bounds for each decision variable at this node.
+</ResponseField>
+
+<ResponseField name="upper_bounds" type="dict[string, float]" required>
+  Current upper bounds for each decision variable at this node.
+</ResponseField>
+
+<ResponseField name="lp_value" type="float | null">
+  LP relaxation objective at this node. `null` if infeasible.
+</ResponseField>
+
+<ResponseField name="lp_vars" type="dict[string, float] | null">
+  LP relaxation variable values. `null` if infeasible.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Node status string (same vocabulary as `BBNode.status`).
+</ResponseField>
+
+<ResponseField name="branched_on" type="string | null">
+  Variable branched on to produce children. `null` for leaf nodes.
+</ResponseField>
+
+<ResponseField name="branch_direction" type="string | null">
+  Which side of the branch this node represents: `"down"` (floor bound tightened) or `"up"` (ceiling bound tightened). `null` for the root.
+</ResponseField>
+
+<ResponseField name="edge_label" type="string | null">
+  Human-readable edge label for tree visualization (e.g. `"x1 ≤ 3"`). `null` for the root.
+</ResponseField>
+
+---
+
+## Nonlinear Optimization Types
+
+These schemas appear in the gradient descent, graphical multivariable, and KKT solver responses.
+
+### `CriticalPointSchema`
+
+A classified critical point returned by the graphical multivariable solver (`GraphicalMultivarResponse.critical_points`).
+
+<ResponseField name="point" type="list[float]" required>
+  Coordinate vector of the critical point, with one entry per variable (length matches `variables`).
+</ResponseField>
+
+<ResponseField name="value" type="float" required>
+  Objective function value at this critical point.
+</ResponseField>
+
+<ResponseField name="nature" type="string" required>
+  Classification of the critical point. One of: `"min"`, `"max"`, `"saddle"`, `"degenerate"`.
+</ResponseField>
+
+```json title="Example CriticalPointSchema"
+{
+  "point": [1.0, 2.0],
+  "value": -3.5,
+  "nature": "min"
+}
+```
+
+---
+
+### `SurfaceData`
+
+A 2-D grid of function values for a two-variable function, used by the front-end to render a Plotly surface chart (`GraphicalMultivarResponse.surface`).
+
+<ResponseField name="x" type="list[float]" required>
+  Sorted x-axis sample values (grid columns).
+</ResponseField>
+
+<ResponseField name="y" type="list[float]" required>
+  Sorted y-axis sample values (grid rows).
+</ResponseField>
+
+<ResponseField name="z" type="list[list[float | null]]" required>
+  2-D matrix of function values. `z[i][j]` is `f(x[j], y[i])`. Individual entries may be `null` where the expression is undefined (e.g. division by zero, domain error).
+</ResponseField>
+
+<Note>
+  The `z` array is row-major: the outer list indexes over `y` values and the inner list indexes over `x` values, matching Plotly's expected layout for `go.Surface`.
+</Note>
+
+---
+
+### `VolumeData`
+
+A flat list of sample points and function values for a three-variable function, used by the front-end to render a Plotly volume or scatter3d chart (`GraphicalMultivarResponse.volume`).
+
+<ResponseField name="x" type="list[float]" required>
+  x-coordinate for each sample point.
+</ResponseField>
+
+<ResponseField name="y" type="list[float]" required>
+  y-coordinate for each sample point.
+</ResponseField>
+
+<ResponseField name="z" type="list[float]" required>
+  z-coordinate for each sample point.
+</ResponseField>
+
+<ResponseField name="value" type="list[float | null]" required>
+  Function value `f(x, y, z)` at each sample point. Entries are `null` where the expression is undefined.
+</ResponseField>
+
+---
+
+### `KKTCase`
+
+One explored combination of active inequality constraints in the KKT solver (`KKTResponse.cases`). The solver enumerates every subset of inequality constraints that could be simultaneously active, attempts to solve the resulting KKT system, and records the outcome here.
+
+<ResponseField name="case_id" type="int" required>
+  Sequential index of this case (zero-based), assigned in enumeration order.
+</ResponseField>
+
+<ResponseField name="active_indices" type="list[int]" required>
+  Indices (into `KKTRequest.constraints`) of the inequality constraints assumed active (binding) in this case. Equality constraints are always active.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Outcome of solving the KKT system for this case. One of:
+  - `"valid"` — a KKT point was found, primal and dual feasibility hold.
+  - `"dual_infeasible"` — the multiplier signs violate dual feasibility (not a true optimum for the given goal).
+  - `"primal_infeasible"` — the solution violates at least one constraint.
+  - `"no_convergence"` — the Newton solver did not converge within the iteration limit.
+</ResponseField>
+
+<ResponseField name="point" type="list[float] | null">
+  Decision variable values at the KKT point. `null` when status is not `"valid"`.
+</ResponseField>
+
+<ResponseField name="lambdas" type="dict[string, float] | null">
+  Lagrange multipliers for equality constraints, keyed by constraint index string. `null` when no equality constraints are active or when the system did not converge.
+</ResponseField>
+
+<ResponseField name="mus" type="dict[string, float] | null">
+  KKT multipliers for inequality constraints, keyed by constraint index string. `null` when no inequality constraints are active.
+</ResponseField>
+
+<ResponseField name="objective_value" type="float | null">
+  Objective function value at this KKT point. `null` when a valid point was not found.
+</ResponseField>
+
+<ResponseField name="note" type="string" required>
+  A plain-language description of why this case was accepted or rejected (e.g. `"Dual infeasible: mu[0] < 0"`).
+</ResponseField>
+
+```json title="Example KKTCase (valid)"
+{
+  "case_id": 2,
+  "active_indices": [0, 2],
+  "status": "valid",
+  "point": [3.0, 1.5],
+  "lambdas": {},
+  "mus": { "0": 4.2, "2": 0.0 },
+  "objective_value": 18.75,
+  "note": "KKT conditions satisfied"
+}
+```
+
+```json title="Example KKTCase (dual infeasible)"
+{
+  "case_id": 5,
+  "active_indices": [1],
+  "status": "dual_infeasible",
+  "point": null,
+  "lambdas": null,
+  "mus": { "1": -1.3 },
+  "objective_value": null,
+  "note": "Dual infeasible: mu[1] < 0"
+}
+```

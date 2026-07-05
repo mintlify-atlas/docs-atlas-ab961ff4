@@ -1,0 +1,346 @@
+---
+title: "POST /api/v1/gradient — Gradient and Graphical Solvers"
+sidebarTitle: "Gradient Solve"
+description: "Optimize multivariate functions (2–3 variables) via gradient descent/ascent or a graphical critical-point scan. Both solvers support symbolic expressions."
+---
+
+The `/api/v1/gradient` prefix exposes two complementary endpoints for unconstrained optimization of functions with 2 or 3 variables.
+
+- **`/solve`** — iterative gradient descent (or ascent) starting from a user-supplied initial point.
+- **`/graphical`** — exhaustive critical-point search over a bounded domain, with surface or volume data for visualization.
+
+Both endpoints accept symbolic expressions (e.g. `"x**2 + y**2"`) and support a `"max"` or `"min"` goal.
+
+---
+
+## POST /api/v1/gradient/solve
+
+Applies gradient descent (`goal: "min"`) or gradient ascent (`goal: "max"`) from an initial point `x0`, updating the point by moving along the (negative) gradient scaled by `step_size` until the gradient norm falls below `tolerance` or `max_iterations` is reached.
+
+### Request
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="expression" type="string" required>
+  Symbolic expression of the objective function using standard Python/SymPy syntax. Variables must match the `variables` list exactly.
+
+  Example: `"x**2 + y**2"`, `"3*x**2 - 4*x*y + y**2 + 2*z"`.
+</ParamField>
+
+<ParamField body="variables" type="list[string]" required>
+  List of variable names used in `expression`. Must contain **2 or 3** elements. Order determines the coordinate order in `x0`, `optimal_point`, gradient arrays, and iteration data.
+
+  Example: `["x", "y"]` or `["x", "y", "z"]`.
+</ParamField>
+
+<ParamField body="x0" type="list[float]" required>
+  Initial point for the gradient iteration. Must have the **same number of elements** as `variables`.
+
+  Example: `[1.0, 1.0]`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`.
+</ParamField>
+
+<ParamField body="step_size" type="float" default="0.1">
+  Learning rate (step length) applied at each gradient update. Must be strictly greater than `0`.
+</ParamField>
+
+<ParamField body="tolerance" type="float" default="1e-6">
+  Convergence criterion on the Euclidean gradient norm `‖∇f‖`. Must be greater than `0` and at most `1.0`.
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="100">
+  Maximum number of gradient steps. Accepted range: **1–500**.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Outcome of the solve. One of:
+  - `"optimal"` — gradient norm fell below `tolerance`.
+  - `"no_convergence"` — `max_iterations` was reached without satisfying the tolerance.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="list[float] | null">
+  Coordinates of the optimal point in the same variable order as `variables`. `null` if not converged.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  Function value at `optimal_point`. `null` if not converged.
+</ResponseField>
+
+<ResponseField name="gradient_norm" type="float | null">
+  Euclidean norm of the gradient at the final iteration. `null` if not converged.
+</ResponseField>
+
+<ResponseField name="iterations_count" type="integer">
+  Actual number of gradient steps performed.
+</ResponseField>
+
+<ResponseField name="iterations" type="list[GradientIteration]">
+  Step-by-step iteration table, one entry per gradient step.
+
+  <Expandable title="GradientIteration object">
+    <ResponseField name="iteration" type="integer">
+      1-based iteration number.
+    </ResponseField>
+    <ResponseField name="point" type="list[float]">
+      Current point coordinates at the start of this iteration.
+    </ResponseField>
+    <ResponseField name="gradient" type="list[float]">
+      Gradient vector `∇f` evaluated at `point`.
+    </ResponseField>
+    <ResponseField name="gradient_norm" type="float">
+      Euclidean norm `‖∇f‖` at `point`.
+    </ResponseField>
+    <ResponseField name="f_value" type="float">
+      Function value `f(point)` at this iteration.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable string representation of `f` as parsed by SymPy (e.g. `"x**2 + y**2"`).
+</ResponseField>
+
+<ResponseField name="gradient_str" type="list[string]">
+  Human-readable string representations of each partial derivative, in the same order as `variables` (e.g. `["2*x", "2*y"]`).
+</ResponseField>
+
+<ResponseField name="variables" type="list[string]">
+  Variable names echoed from the request.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result.
+</ResponseField>
+
+### Example
+
+Minimize **f(x, y) = x² + y²** from the initial point `(1, 1)`.
+
+```bash
+curl -X POST https://api.example.com/api/v1/gradient/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + y**2",
+    "variables": ["x", "y"],
+    "x0": [1.0, 1.0],
+    "goal": "min",
+    "step_size": 0.1,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "optimal_point": [0.0, 0.0],
+  "optimal_value": 0.0,
+  "gradient_norm": 4.94e-7,
+  "iterations_count": 68,
+  "iterations": [
+    {
+      "iteration": 1,
+      "point": [1.0, 1.0],
+      "gradient": [2.0, 2.0],
+      "gradient_norm": 2.8284,
+      "f_value": 2.0
+    },
+    {
+      "iteration": 2,
+      "point": [0.8, 0.8],
+      "gradient": [1.6, 1.6],
+      "gradient_norm": 2.2627,
+      "f_value": 1.28
+    }
+  ],
+  "function_str": "x**2 + y**2",
+  "gradient_str": ["2*x", "2*y"],
+  "variables": ["x", "y"],
+  "message": "Minimum found at [0.0, 0.0] with f = 0.0"
+}
+```
+
+---
+
+## POST /api/v1/gradient/graphical
+
+Locates and classifies all critical points of the objective function within the given variable bounds by running a multivariate Newton solver from multiple starting points on a grid. For 2-variable functions it also computes surface grid data (`z[i][j] = f(x[i], y[j])`); for 3-variable functions it computes volume scatter data — both ready for Plotly rendering.
+
+### Request
+
+```json
+Content-Type: application/json
+```
+
+<ParamField body="expression" type="string" required>
+  Symbolic expression of the objective function. Must reference only the variables listed in `variables`.
+</ParamField>
+
+<ParamField body="variables" type="list[string]" required>
+  List of 2 or 3 variable names. Order matches `bounds` and all output arrays.
+</ParamField>
+
+<ParamField body="bounds" type="list[list[float]]" required>
+  Per-variable search bounds. Each element is a two-element array `[min, max]` with `max > min`. The number of bound pairs must equal the number of `variables`.
+
+  Example: `[[-2, 2], [-2, 2]]` restricts both x and y to `[−2, 2]`.
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimisation direction. Accepted values: `"max"` or `"min"`. Used to select the best critical point from those found.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Outcome of the search. One of:
+  - `"optimal"` — at least one valid critical point was found within the bounds.
+  - `"no_critical_point"` — no critical point satisfying the stationarity conditions was found in the domain.
+</ResponseField>
+
+<ResponseField name="variables" type="list[string]">
+  Variable names echoed from the request.
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable string representation of `f` as parsed by SymPy.
+</ResponseField>
+
+<ResponseField name="optimal_point" type="list[float] | null">
+  Coordinates of the best critical point found according to `goal`. `null` if `status` is `"no_critical_point"`.
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  Function value at `optimal_point`. `null` if `status` is `"no_critical_point"`.
+</ResponseField>
+
+<ResponseField name="critical_points" type="list[CriticalPointSchema]">
+  All distinct critical points found inside the bounds.
+
+  <Expandable title="CriticalPointSchema object">
+    <ResponseField name="point" type="list[float]">
+      Coordinates of the critical point.
+    </ResponseField>
+    <ResponseField name="value" type="float">
+      Function value at this critical point.
+    </ResponseField>
+    <ResponseField name="nature" type="string">
+      Nature of the critical point: `"min"`, `"max"`, `"saddle"`, or `"degenerate"`.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="surface" type="SurfaceData | null">
+  Grid data for 2-variable surface plots. `null` for 3-variable problems.
+
+  <Expandable title="SurfaceData object">
+    <ResponseField name="x" type="list[float]">
+      Evenly-spaced x-axis values across the x bound.
+    </ResponseField>
+    <ResponseField name="y" type="list[float]">
+      Evenly-spaced y-axis values across the y bound.
+    </ResponseField>
+    <ResponseField name="z" type="list[list[float | null]]">
+      2-D grid of `f(x, y)` values. Indexed as `z[i][j]` corresponding to `x[i]` and `y[j]`. A cell is `null` if evaluation failed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="volume" type="VolumeData | null">
+  Scatter data for 3-variable volume plots. `null` for 2-variable problems.
+
+  <Expandable title="VolumeData object">
+    <ResponseField name="x" type="list[float]">
+      x-coordinates of each scatter point.
+    </ResponseField>
+    <ResponseField name="y" type="list[float]">
+      y-coordinates of each scatter point.
+    </ResponseField>
+    <ResponseField name="z" type="list[float]">
+      z-coordinates of each scatter point.
+    </ResponseField>
+    <ResponseField name="value" type="list[float | null]">
+      Function values `f(x, y, z)` at each scatter point. `null` entries indicate evaluation failures.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable summary of the result.
+</ResponseField>
+
+### Example
+
+Find critical points of **f(x, y) = x² + y²** within `[−2, 2] × [−2, 2]`.
+
+```bash
+curl -X POST https://api.example.com/api/v1/gradient/graphical \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expression": "x**2 + y**2",
+    "variables": ["x", "y"],
+    "bounds": [[-2, 2], [-2, 2]],
+    "goal": "min"
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "variables": ["x", "y"],
+  "function_str": "x**2 + y**2",
+  "optimal_point": [0.0, 0.0],
+  "optimal_value": 0.0,
+  "critical_points": [
+    {
+      "point": [0.0, 0.0],
+      "value": 0.0,
+      "nature": "min"
+    }
+  ],
+  "surface": {
+    "x": [-2.0, -1.6, -1.2, -0.8, -0.4, 0.0, 0.4, 0.8, 1.2, 1.6, 2.0],
+    "y": [-2.0, -1.6, -1.2, -0.8, -0.4, 0.0, 0.4, 0.8, 1.2, 1.6, 2.0],
+    "z": [
+      [8.0, 6.56, 5.44, 4.64, 4.16, 4.0, 4.16, 4.64, 5.44, 6.56, 8.0],
+      ["..."]
+    ]
+  },
+  "volume": null,
+  "message": "Minimum found at [0.0, 0.0] with f = 0.0"
+}
+```
+
+<Note>
+  The `surface` field is only populated for 2-variable functions. For 3-variable functions the `volume` field is populated instead and `surface` is `null`.
+</Note>
+
+<Warning>
+  The `expression` field is parsed by SymPy. Use Python-style operators: `**` for exponentiation, `*` for multiplication. Unsupported symbols or syntax errors return HTTP `422 Unprocessable Entity`.
+</Warning>
+
+---
+
+## Health Check
+
+**`GET /api/v1/gradient/health`**
+
+Returns a liveness confirmation for the Gradient Optimization service.
+
+```bash
+curl https://api.example.com/api/v1/gradient/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "gradient-optimizer-api"
+}
+```

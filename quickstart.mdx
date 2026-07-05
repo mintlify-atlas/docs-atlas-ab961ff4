@@ -1,47 +1,218 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Simplex Optimizer in 5 Minutes"
+sidebarTitle: "Quickstart"
+description: "Learn how to run the Simplex Optimizer backend and frontend locally and make your first API call to solve a linear programming problem."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+This guide walks you through cloning the repository, starting both services on your machine, and sending your first optimization request to the API — all in about five minutes. By the end you will have the interactive frontend running at `http://localhost:5173` and the REST API serving at `http://localhost:8000`.
 
 ## Prerequisites
 
-Before you begin, you must have:
+Before you begin, make sure the following are installed on your machine:
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+- **Python 3.11+** — required by the FastAPI backend and its numerical dependencies (NumPy, SymPy).
+- **Node.js 18+** and **npm** — required to install and run the React frontend.
 
-## Get started
+<Tip>
+  Check your versions with `python --version`, `node --version`, and `npm --version` before proceeding.
+</Tip>
+
+## Backend Setup
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
-
+  <Step title="Clone the repository">
     ```bash
-    npm install your-package
+    git clone https://github.com/FabianeloV/Metodo-simplex.git
+    cd Metodo-simplex
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
-    ```
+  <Step title="Create and activate a virtual environment">
+    A virtual environment keeps the project's Python dependencies isolated from your system installation.
+
+    <CodeGroup>
+      ```bash Linux / macOS
+      cd backend
+      python -m venv .venv
+      source .venv/bin/activate
+      ```
+
+      ```bash Windows
+      cd backend
+      python -m venv .venv
+      .venv\Scripts\activate
+      ```
+    </CodeGroup>
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Install Python dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    This installs the exact pinned versions used in development:
+
+    | Package | Version |
+    |---|---|
+    | fastapi | 0.115.0 |
+    | uvicorn[standard] | 0.30.6 |
+    | pydantic | 2.9.2 |
+    | numpy | 2.1.1 |
+    | sympy | 1.13.3 |
+    | python-dotenv | 1.0.1 |
+    | httpx | 0.27.2 |
+  </Step>
+
+  <Step title="Configure environment variables">
+    Copy the example environment file and adjust values as needed:
 
     ```bash
-    your-cli start
+    cp .env.example .env
     ```
+
+    The default `.env.example` contains:
+
+    ```ini .env
+    # FastAPI server configuration
+    APP_HOST=0.0.0.0
+    APP_PORT=8000
+    APP_RELOAD=true
+
+    # CORS origins (comma-separated)
+    CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+    ```
+
+    <Note>
+      `CORS_ORIGINS` must include the URL where the frontend runs. The default value already covers Vite's default dev-server port (`5173`).
+    </Note>
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    uvicorn app.main:app --reload --port 8000
+    ```
+
+    The API is now reachable at `http://localhost:8000`. Interactive documentation is available at two URLs:
+
+    - **Swagger UI** — `http://localhost:8000/docs`
+    - **ReDoc** — `http://localhost:8000/redoc`
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Frontend Setup
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+Open a **new terminal** and navigate back to the project root before running these steps.
+
+<Steps>
+  <Step title="Move into the frontend directory and install dependencies">
+    ```bash
+    cd frontend
+    npm install
+    ```
+  </Step>
+
+  <Step title="Configure the API base URL">
+    ```bash
+    cp .env.example .env
+    ```
+
+    The example file ships with a single variable:
+
+    ```ini .env
+    # FastAPI backend URL (no trailing slash)
+    VITE_API_URL=http://localhost:8000/api/v1
+    ```
+
+    <Note>
+      All environment variables consumed by Vite **must** be prefixed with `VITE_`. The frontend's HTTP service reads `VITE_API_URL` at build time via `import.meta.env.VITE_API_URL`.
+    </Note>
+  </Step>
+
+  <Step title="Start the Vite development server">
+    ```bash
+    npm run dev
+    ```
+
+    Open `http://localhost:5173` in your browser to access the interactive solver UI.
+  </Step>
+</Steps>
+
+## Your First API Call
+
+With the backend running, send a POST request to solve a three-variable linear programming problem. The example below maximizes the objective function **Z = 3x₁ + 2x₂ + 5x₃** subject to three resource constraints:
+
+<CodeGroup>
+  ```bash curl (Linux / macOS)
+  curl -X POST http://localhost:8000/api/v1/simplex/solve \
+    -H "Content-Type: application/json" \
+    -d '{
+      "objective":    [3, 2, 5],
+      "goal":         "max",
+      "constraints": [
+        { "coefficients": [1, 0, 1], "inequality": "<=", "rhs": 430 },
+        { "coefficients": [0, 1, 1], "inequality": "<=", "rhs": 460 },
+        { "coefficients": [1, 1, 0], "inequality": "<=", "rhs": 420 }
+      ]
+    }'
+  ```
+
+  ```powershell curl (Windows PowerShell)
+  curl -X POST http://localhost:8000/api/v1/simplex/solve `
+    -H "Content-Type: application/json" `
+    -d '{
+      "objective":    [3, 2, 5],
+      "goal":         "max",
+      "constraints": [
+        { "coefficients": [1, 0, 1], "inequality": "<=", "rhs": 430 },
+        { "coefficients": [0, 1, 1], "inequality": "<=", "rhs": 460 },
+        { "coefficients": [1, 1, 0], "inequality": "<=", "rhs": 420 }
+      ]
+    }'
+  ```
+</CodeGroup>
+
+### Expected Response
+
+```json
+{
+  "status":          "optimal",
+  "objective_value": 1350.0,
+  "variables":       { "x1": 0.0, "x2": 100.0, "x3": 230.0 },
+  "iterations":      3,
+  "tableau_headers": ["Basic", "Z", "x1", "x2", "x3", "s1", "s2", "s3", "RHS"],
+  "tableau_rows":    [ "..." ],
+  "message":         "Optimal solution found after 3 iteration(s)."
+}
+```
+
+The response includes:
+
+| Field | Description |
+|---|---|
+| `status` | Solution status: `optimal`, `unbounded`, or `infeasible` |
+| `objective_value` | The value of the objective function at the optimal point |
+| `variables` | Map of decision variable names to their optimal values |
+| `iterations` | Number of pivot steps performed |
+| `tableau_headers` | Column labels for the final simplex tableau |
+| `tableau_rows` | Row data for the final simplex tableau |
+| `message` | Human-readable summary of the solver result |
+
+<Tip>
+  You can explore and test all nine solver endpoints interactively through the Swagger UI at `http://localhost:8000/docs`. Each endpoint includes schema documentation and a built-in "Try it out" form.
 </Tip>
+
+## Health Check
+
+Each solver router exposes a lightweight health endpoint. Verify the backend is up with:
+
+```bash
+curl http://localhost:8000/api/v1/simplex/health
+```
+
+A `200 OK` response confirms the service is running and the route is registered correctly.
+
+## Next Steps
+
+- Read the [API Reference](/api/overview) for full schema documentation on all nine solvers.
+- Visit [Methods](/methods) for algorithm explanations and more request/response examples.
+- See [Architecture](/architecture) for the component structure and deployment guide.

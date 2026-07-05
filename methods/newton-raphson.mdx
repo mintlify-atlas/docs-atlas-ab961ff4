@@ -1,0 +1,212 @@
+---
+title: "Newton-Raphson Method for Single-Variable Optimization"
+sidebarTitle: "Newton-Raphson"
+description: "Find local optima of a single-variable polynomial using Newton-Raphson iteration on f′(x). Faster convergence than bisection for smooth functions."
+---
+
+The Newton-Raphson method finds a stationary point of a single-variable polynomial by iteratively improving an initial estimate x₀ using the recurrence:
+
+$$x_{n+1} = x_n - \frac{f'(x_n)}{f''(x_n)}$$
+
+Each step moves in the direction that reduces |f′(x)| most sharply, using f″(x) as the local curvature to scale the correction. Convergence is **quadratic** near a true stationary point — the number of correct decimal places roughly doubles with each iteration — making it substantially faster than bisection for well-behaved smooth functions. In exchange it requires a starting point x₀ rather than a bracketing interval, and it can fail to converge if x₀ is far from the solution, if f″ is near zero, or if the function has inflection points in the neighbourhood.
+
+## Comparison with Bisection
+
+| Property | Bisection | Newton-Raphson |
+| --- | --- | --- |
+| Inputs required | Interval \[a, b\] with sign change of f′ | Starting point x₀ |
+| Convergence rate | Linear (halves interval each step) | Quadratic near solution |
+| Requires f″ | No | Yes |
+| Guaranteed to converge? | Yes, when bracketing holds | No — may diverge |
+| Risk of divergence | None (within bracket) | Near inflection points or poor x₀ |
+
+---
+
+## Endpoint
+
+```
+POST /newton/solve
+```
+
+---
+
+## Request
+
+<ParamField body="coefficients" type="float[]" required>
+  Polynomial coefficients listed from **highest to lowest degree** (NumPy convention). Must contain between 1 and 11 elements; the list must not be identically zero.
+
+  **Example:** `[-1, 0, 4, 0]` encodes f(x) = −x³ + 4x.
+
+  | `coefficients`   | f(x)          |
+  | ---------------- | ------------- |
+  | `[-1, 4, 0]`     | −x² + 4x      |
+  | `[1, -6, 9, 0]`  | x³ − 6x² + 9x |
+  | `[1, 0, -5, 0]`  | x³ − 5x       |
+</ParamField>
+
+<ParamField body="goal" type="string" required>
+  Optimization direction: `"max"` or `"min"`. The engine uses f″(x\*) to classify the converged point and sets `goal_satisfied` accordingly.
+</ParamField>
+
+<ParamField body="x0" type="float" required>
+  Initial guess for the iterative procedure. The choice of x₀ significantly affects which stationary point (if any) the method converges to. For multimodal functions, try different starting values to locate distinct optima.
+</ParamField>
+
+<ParamField body="tolerance" type="float" default="1e-6">
+  Convergence criterion. Iteration stops when |f′(xₙ)| \< tolerance **or** |xₙ₊₁ − xₙ| \< tolerance. Must be in the range (0, 1].
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="100">
+  Maximum number of Newton-Raphson steps. Must be between 1 and 500. If the method has not converged after this many steps, `status` is set to `"no_convergence"`.
+</ParamField>
+
+---
+
+## Response
+
+<ResponseField name="status" type="string">
+  Final status of the solver:
+  - `"optimal"` — a stationary point was found within the tolerance and iteration limits.
+  - `"no_convergence"` — the method did not converge within `max_iterations` steps. The last iterate is still returned in `optimal_x` for inspection.
+</ResponseField>
+
+<ResponseField name="optimal_x" type="float | null">
+  The x-coordinate of the stationary point found (or the last iterate when `status = "no_convergence"`).
+</ResponseField>
+
+<ResponseField name="optimal_value" type="float | null">
+  The function value f(optimal_x).
+</ResponseField>
+
+<ResponseField name="nature" type="string | null">
+  Classification of the stationary point using the second-derivative test on f″(x\*):
+  - `"mínimo"` — local minimum (f″ > 0).
+  - `"máximo"` — local maximum (f″ < 0).
+  - `"punto de inflexión"` — saddle or inflection point (f″ ≈ 0).
+</ResponseField>
+
+<ResponseField name="goal_satisfied" type="boolean">
+  `true` when `nature` matches the requested `goal` (e.g. `goal = "min"` and `nature = "mínimo"`).
+</ResponseField>
+
+<ResponseField name="iterations_count" type="integer">
+  Number of Newton-Raphson steps actually performed.
+</ResponseField>
+
+<ResponseField name="iterations" type="NewtonIteration[]">
+  Complete per-step trace of the iteration sequence.
+
+  <Expandable title="NewtonIteration fields">
+    <ResponseField name="iteration" type="integer">
+      One-based step counter.
+    </ResponseField>
+
+    <ResponseField name="x_n" type="float">
+      Current iterate xₙ at the start of this step.
+    </ResponseField>
+
+    <ResponseField name="f_xn" type="float">
+      Function value f(xₙ).
+    </ResponseField>
+
+    <ResponseField name="df_xn" type="float">
+      First derivative f′(xₙ) — the value being driven to zero.
+    </ResponseField>
+
+    <ResponseField name="d2f_xn" type="float">
+      Second derivative f″(xₙ) — used as the denominator in the Newton step. The engine raises a 422 error if this is ≈ 0 during iteration.
+    </ResponseField>
+
+    <ResponseField name="x_next" type="float">
+      Next iterate xₙ₊₁ = xₙ − f′(xₙ) / f″(xₙ).
+    </ResponseField>
+
+    <ResponseField name="step" type="float">
+      Absolute step size |xₙ₊₁ − xₙ|. Used as a secondary convergence check alongside the derivative criterion.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="function_str" type="string">
+  Human-readable representation of f(x), e.g. `"-x² + 4x"`.
+</ResponseField>
+
+<ResponseField name="derivative_str" type="string">
+  Human-readable representation of f′(x), e.g. `"-2x + 4"`.
+</ResponseField>
+
+<ResponseField name="second_derivative_str" type="string">
+  Human-readable representation of f″(x), e.g. `"-2"`. This field is unique to the Newton-Raphson response and is not present in the Bisection response.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Narrative summary of the result. Includes the converged point, its nature, whether the goal was matched, and actionable guidance when the method did not converge or found the wrong type of stationary point.
+</ResponseField>
+
+---
+
+## Example
+
+Find the **maximum** of f(x) = −x² + 4x starting from x₀ = 1:
+
+```bash
+curl -X POST http://localhost:8000/newton/solve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coefficients": [-1, 4, 0],
+    "goal": "max",
+    "x0": 1.0,
+    "tolerance": 1e-6,
+    "max_iterations": 100
+  }'
+```
+
+```json
+{
+  "status": "optimal",
+  "optimal_x": 2.0,
+  "optimal_value": 4.0,
+  "nature": "máximo",
+  "goal_satisfied": true,
+  "iterations_count": 1,
+  "iterations": [
+    {
+      "iteration": 1,
+      "x_n": 1.0,
+      "f_xn": 3.0,
+      "df_xn": 2.0,
+      "d2f_xn": -2.0,
+      "x_next": 2.0,
+      "step": 1.0
+    }
+  ],
+  "function_str": "-x² + 4x",
+  "derivative_str": "-2x + 4",
+  "second_derivative_str": "-2",
+  "message": "Óptimo encontrado: x = 2 es un máximo de la función, coincidiendo con la meta solicitada (máximo)."
+}
+```
+
+<Note>
+  For a pure quadratic like −x² + 4x, Newton-Raphson converges **exactly in one step** because the Newton correction is itself exact. For higher-degree polynomials, multiple iterations are generally required.
+</Note>
+
+---
+
+## Convergence Pitfalls
+
+<Warning>
+  **Divergence near inflection points.** If f″(xₙ) ≈ 0 during iteration, the Newton step becomes extremely large and the sequence diverges. The engine detects |f″| \< 1 × 10⁻¹⁴ and immediately returns a 422 error with a suggestion to try a different x₀.
+</Warning>
+
+<Warning>
+  **`no_convergence` status.** When the method exhausts `max_iterations` without satisfying the tolerance, `status` is set to `"no_convergence"` rather than `"optimal"`. The `optimal_x` field still contains the last computed iterate, which may be useful for diagnosing the starting point. Increase `max_iterations` or choose an x₀ closer to the expected solution.
+</Warning>
+
+<Note>
+  **Saddle / inflection points.** When f″(x\*) ≈ 0 at the converged point, `nature` is `"punto de inflexión"` and `goal_satisfied` will be `false`. The method has found a stationary point, but the second-derivative test is inconclusive — neither a minimum nor a maximum is confirmed.
+</Note>
+
+<Note>
+  **Wrong type of stationary point.** Newton-Raphson converges to the nearest stationary point of f′, which might be a minimum when you requested a maximum. In this case `status` is still `"optimal"` but `goal_satisfied` is `false`. Try a starting point x₀ on the other side of the function's inflection point to target the desired extremum type.
+</Note>
